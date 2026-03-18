@@ -1,5 +1,6 @@
 .PHONY: all build build-release build-zbm build-zbm-disk iso run run-debug run-release \
-	run-zbm run-zbm-uefi run-aarch64 run-uefi run-uefi-aarch64 clean help
+	run-zbm run-zbm-uefi run-aarch64 run-uefi run-uefi-aarch64 \
+	run-desktop run-desktop-uefi desktop desktop-all clean help
 
 VERSION := 1.0.0
 
@@ -18,6 +19,12 @@ help:
 	@echo ""
 	@echo "  ISO (GRUB):"
 	@echo "  make iso               - Build bootable ISO (x86_64 BIOS, GRUB)"
+	@echo ""
+	@echo "  Desktop Themes:"
+	@echo "  make desktop           - Build default desktop theme (luna)"
+	@echo "  make desktop-all       - Build all desktop themes"
+	@echo "  make run-desktop       - Run with Luna desktop (1024x768, VGA)"
+	@echo "  make run-desktop-uefi  - Run desktop mode via UEFI"
 	@echo ""
 	@echo "  Run in QEMU:"
 	@echo "  make run               - Run via GRUB (x86_64 BIOS)"
@@ -77,6 +84,20 @@ run-uefi:
 
 run-uefi-aarch64:
 	@./run.sh run-uefi-aarch64
+
+run-desktop:
+	@./run.sh run-desktop
+
+run-desktop-uefi:
+	@./run.sh run-desktop-uefi
+
+desktop:
+	@echo "Building desktop theme (default from config)..."
+	@zig build desktop -Dtheme=luna
+
+desktop-all:
+	@echo "Building all desktop themes..."
+	@zig build desktop-all
 
 clean:
 	@./run.sh clean

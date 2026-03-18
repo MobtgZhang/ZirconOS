@@ -327,6 +327,43 @@ run_zbm_uefi() {
         -no-shutdown
 }
 
+run_desktop() {
+    check_tool qemu-system-x86_64 "apt install qemu-system-x86"
+    build_iso "${1:-Debug}"
+    info "Starting QEMU (x86_64 Desktop Mode, 1024x768x32)..."
+    qemu-system-x86_64 \
+        -m "${QEMU_MEM:-512M}" \
+        -cdrom "$ISO" \
+        -serial stdio \
+        -display gtk,zoom-to-fit=on,show-cursor=on \
+        -vga std \
+        -no-reboot \
+        -no-shutdown \
+        -usb \
+        -device usb-mouse \
+        -device usb-kbd
+}
+
+run_desktop_uefi() {
+    check_tool qemu-system-x86_64 "apt install qemu-system-x86"
+    build_iso "${1:-Debug}"
+    info "Starting QEMU (x86_64 Desktop UEFI Mode)..."
+    cp -f "$OVMF_VARS" "$TMP_DIR/OVMF_VARS.fd"
+    qemu-system-x86_64 \
+        -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+        -drive if=pflash,format=raw,file="$TMP_DIR/OVMF_VARS.fd" \
+        -cdrom "$ISO" \
+        -m "${QEMU_MEM:-512M}" \
+        -serial stdio \
+        -display gtk,zoom-to-fit=on,show-cursor=on \
+        -vga std \
+        -no-reboot \
+        -no-shutdown \
+        -usb \
+        -device usb-mouse \
+        -device usb-kbd
+}
+
 run_aarch64() {
     check_tool qemu-system-aarch64 "apt install qemu-system-arm"
     ARCH=aarch64 build_kernel "Debug"
@@ -360,6 +397,8 @@ Commands:
   run                Run in QEMU (x86_64 BIOS/GRUB, debug)
   run-release        Run in QEMU (x86_64 BIOS/GRUB, release)
   run-debug          Run in QEMU with GDB server
+  run-desktop        Run in QEMU with Luna desktop (1024x768, VGA std)
+  run-desktop-uefi   Run in QEMU desktop mode via UEFI
   run-zbm            Run in QEMU (ZBM BIOS/MBR Boot Manager)
   run-zbm-uefi       Run in QEMU (ZBM UEFI/GPT Boot Manager)
   run-aarch64        Run kernel in QEMU (aarch64 virt)
@@ -394,6 +433,8 @@ case "${1:-help}" in
     run)               run_bios "Debug" ;;
     run-release)       run_bios "ReleaseSafe" ;;
     run-debug)         run_bios_debug ;;
+    run-desktop)       run_desktop "Debug" ;;
+    run-desktop-uefi)  run_desktop_uefi "Debug" ;;
     run-zbm)           run_zbm_bios "Debug" ;;
     run-zbm-uefi)      run_zbm_uefi "Debug" ;;
     run-aarch64)       run_aarch64 ;;

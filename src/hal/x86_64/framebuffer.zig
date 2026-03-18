@@ -15,9 +15,18 @@ var rows: usize = 0;
 var cur_col: usize = 0;
 var cur_row: usize = 0;
 var ready: bool = false;
+var console_enabled: bool = true;
 
-const FG_COLOR: u32 = 0x00AAAAAA; // light grey
-const BG_COLOR: u32 = 0x00000000; // black
+const FG_COLOR: u32 = 0x00AAAAAA;
+const BG_COLOR: u32 = 0x00000000;
+
+pub fn setConsoleEnabled(e: bool) void {
+    console_enabled = e;
+}
+
+pub fn isConsoleEnabled() bool {
+    return console_enabled;
+}
 
 pub fn init(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
     fb_addr = addr;
@@ -37,7 +46,7 @@ pub fn isReady() bool {
 }
 
 pub fn clear() void {
-    if (!ready) return;
+    if (!ready or !console_enabled) return;
     const total_bytes = fb_pitch * fb_height;
     const ptr: [*]volatile u8 = @ptrFromInt(fb_addr);
     var i: usize = 0;
@@ -49,7 +58,7 @@ pub fn clear() void {
 }
 
 pub fn write(s: []const u8) void {
-    if (!ready) return;
+    if (!ready or !console_enabled) return;
     for (s) |c| putChar(c);
 }
 

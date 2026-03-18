@@ -56,6 +56,13 @@ pub fn build(b: *std.Build) void {
     });
     root_mod.addOptions("build_options", build_opts);
 
+    const config_defaults_mod = b.createModule(.{
+        .root_source_file = b.path("config/defaults.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    root_mod.addImport("config_defaults", config_defaults_mod);
+
     const kernel = b.addExecutable(.{
         .name = "kernel",
         .root_module = root_mod,
@@ -96,6 +103,88 @@ pub fn build(b: *std.Build) void {
 
     buildUefi(b, cpu_arch, optimize, debug_mode);
     buildZbm(b, cpu_arch, optimize, debug_mode);
+    buildDesktop(b, optimize);
+}
+
+const desktop_themes = [_]struct { name: []const u8, dir: []const u8, import_name: []const u8 }{
+    .{ .name = "classic", .dir = "3rdparty/ZirconOSClassic", .import_name = "ZirconOSClassic" },
+    .{ .name = "luna", .dir = "3rdparty/ZirconOSLuna", .import_name = "ZirconOSLuna" },
+    .{ .name = "aero", .dir = "3rdparty/ZirconOSAero", .import_name = "ZirconOSAero" },
+    .{ .name = "modern", .dir = "3rdparty/ZirconOSModern", .import_name = "ZirconOSModern" },
+    .{ .name = "fluent", .dir = "3rdparty/ZirconOSFluent", .import_name = "ZirconOSFluent" },
+    .{ .name = "sunvalley", .dir = "3rdparty/ZirconOSSunValley", .import_name = "ZirconOSSunValley" },
+};
+
+fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
+    const theme_opt = b.option(
+        []const u8,
+        "theme",
+        "Desktop theme to build (classic, luna, aero, modern, fluent, sunvalley)",
+    );
+
+    const target = b.standardTargetOptions(.{});
+
+    const desktop_all_step = b.step("desktop-all", "Build all desktop themes");
+
+    for (desktop_themes) |entry| {
+        const src_path = b.fmt("{s}/src/main.zig", .{entry.dir});
+        const root_path = b.fmt("{s}/src/root.zig", .{entry.dir});
+        const exe_name = b.fmt("ZirconOS-{s}", .{entry.name});
+
+        const theme_mod = b.addModule(entry.import_name, .{
+            .root_source_file = b.path(root_path),
+            .target = target,
+        });
+
+        const exe = b.addExecutable(.{
+            .name = exe_name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(src_path),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        exe.root_module.addImport(entry.import_name, theme_mod);
+
+        b.installArtifact(exe);
+
+        const theme_step_name = b.fmt("desktop-{s}", .{entry.name});
+        const theme_step_desc = b.fmt("Build {s} desktop theme", .{entry.name});
+        const theme_step = b.step(theme_step_name, theme_step_desc);
+        theme_step.dependOn(&exe.step);
+
+        desktop_all_step.dependOn(&exe.step);
+    }
+
+    const desktop_step = b.step("desktop", "Build selected desktop theme (use -Dtheme=NAME)");
+    if (theme_opt) |selected| {
+        for (desktop_themes) |entry| {
+            if (mem.eql(u8, selected, entry.name)) {
+                const src_path = b.fmt("{s}/src/main.zig", .{entry.dir});
+                const root_path = b.fmt("{s}/src/root.zig", .{entry.dir});
+                const exe_name = b.fmt("ZirconOS-{s}", .{entry.name});
+
+                const theme_mod = b.addModule(b.fmt("{s}-sel", .{entry.import_name}), .{
+                    .root_source_file = b.path(root_path),
+                    .target = target,
+                });
+
+                const exe = b.addExecutable(.{
+                    .name = exe_name,
+                    .root_module = b.createModule(.{
+                        .root_source_file = b.path(src_path),
+                        .target = target,
+                        .optimize = optimize,
+                    }),
+                });
+                exe.root_module.addImport(entry.import_name, theme_mod);
+
+                b.installArtifact(exe);
+                desktop_step.dependOn(&exe.step);
+                break;
+            }
+        }
+    }
 }
 
 fn buildZbm(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin.OptimizeMode, debug_mode: bool) void {

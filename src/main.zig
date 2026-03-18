@@ -60,6 +60,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     const user32_mod = @import("subsystems/win32/user32.zig");
     const gdi32_mod = @import("subsystems/win32/gdi32.zig");
     const wow64_mod = @import("subsystems/win32/wow64.zig");
+    const sys_config = @import("config/config.zig");
 
     // ═══ Phase 0: Early Init ═══
     arch.initSerial();
@@ -74,6 +75,28 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     } else {
         klog.info("Build: RELEASE mode (optimized)", .{});
     }
+
+    // ═══ Phase 0.5: Load Configuration ═══
+    klog.info("--- Loading System Configuration ---", .{});
+    sys_config.init();
+
+    klog.info("Config: hostname=%s, version=%s, arch=%s", .{
+        sys_config.getHostname(),
+        sys_config.getVersion(),
+        sys_config.getArch(),
+    });
+    klog.info("Config: heap=%uKB, max_procs=%u, tick=%uHz", .{
+        sys_config.getHeapSizeKb(),
+        sys_config.getMaxProcesses(),
+        sys_config.getTickRateHz(),
+    });
+    klog.info("Config: display=%ux%u@%ubpp, serial=%s", .{
+        sys_config.getDefaultWidth(),
+        sys_config.getDefaultHeight(),
+        sys_config.getDefaultBpp(),
+        if (sys_config.isSerialEnabled()) "enabled" else "disabled",
+    });
+    klog.info("Config: %u total entries loaded", .{sys_config.getTotalConfigEntries()});
 
     // ═══ Phase 1: Boot Verification + Hardware Init ═══
     klog.info("--- Phase 1: Boot + Early Kernel ---", .{});
@@ -239,6 +262,18 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     // ═══ Phase 6: I/O + File System + Driver ═══
     klog.info("--- Phase 6: I/O + File + Driver ---", .{});
 
+    const drivers = @import("drivers/mod.zig");
+    drivers.init();
+
+    if (boot_info) |binfo| {
+        if (binfo.fb_info) |fb| {
+            if (fb.fb_type != 2 and fb.width > 0 and fb.height > 0 and fb.bpp > 0) {
+                const fb_addr_drv = @as(usize, @truncate(fb.addr));
+                drivers.initDesktopMode(fb_addr_drv, fb.width, fb.height, fb.pitch, fb.bpp);
+            }
+        }
+    }
+
     vfs_mod.init();
     fat32_mod.init();
     ntfs_mod.init();
@@ -294,128 +329,57 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         wow64_mod.getThunkCount(),
     });
 
-    // ═══ Boot Complete Summary ═══
-    klog.info("", .{});
-    klog.info("=== ZirconOS v1.0 Kernel Ready (Phase 0-11) ===", .{});
-    klog.info("Architecture : x86_64", .{});
-    klog.info("Boot method  : BIOS/Multiboot2", .{});
-    if (klog.DEBUG_MODE) {
-        klog.info("Build mode   : DEBUG", .{});
-    } else {
-        klog.info("Build mode   : RELEASE", .{});
+    // ═══ Phase 12: Desktop Environment (Luna) ═══
+    klog.info("--- Phase 12: Desktop Environment ---", .{});
+
+    if (drivers.isDesktopReady()) {
+        klog.info("Desktop: Initializing Luna Blue desktop...", .{});
+
+        const display = drivers.video.display;
+
+        display.renderLunaDesktop();
+
+        klog.info("Desktop: Luna Blue rendered successfully", .{});
+
+        arch.impl.framebuffer.setConsoleEnabled(false);
+
+        // Desktop idle loop - keep CPU in low-power state
+        // Serial logging remains active for diagnostics
+        while (true) {
+            arch.waitForInterrupt();
+        }
     }
+
+    // ═══ Text Mode Fallback ═══
+    klog.info("Desktop: No graphical framebuffer - text mode fallback", .{});
     klog.info("", .{});
-    klog.info("Kernel Modules:", .{});
-    klog.info("  ke  : scheduler, timer, interrupt, sync", .{});
-    klog.info("  mm  : frame allocator, virtual memory, heap", .{});
-    klog.info("  ob  : object manager, handle table, namespace, waitable", .{});
-    klog.info("  ps  : process manager, server, session manager (smss)", .{});
-    klog.info("  se  : security token, SID, access check", .{});
-    klog.info("  io  : device/driver objects, IRP dispatch", .{});
-    klog.info("  lpc : IPC message passing, LPC ports", .{});
-    klog.info("  fs  : VFS, FAT32 (C:\\), NTFS (D:\\)", .{});
-    klog.info("  ldr : PE32/PE32+ loader (DLL/EXE), ELF64 loader", .{});
-    klog.info("  win32: ntdll, kernel32, console, CMD, PowerShell", .{});
-    klog.info("  csrss: Win32 subsystem server, window station, desktops", .{});
-    klog.info("  exec : Win32 app execution engine, DLL binding", .{});
-    klog.info("  user32: window management, message queue, UI primitives", .{});
-    klog.info("  gdi32: device contexts, drawing, fonts, bitmaps", .{});
-    klog.info("  wow64: 32-bit compatibility, thunking, PE32 support", .{});
-    klog.info("", .{});
-    klog.info("System Status:", .{});
-    klog.info("  Processes  : %u", .{@import("ps/process.zig").getProcessCount()});
-    klog.info("  Sessions   : %u", .{smss.getSessionCount()});
-    klog.info("  Heap       : %u/%u bytes used", .{ heap.usedBytes(), heap.totalBytes() });
-    klog.info("  Mounts     : %u file systems", .{vfs_mod.getMountCount()});
-    klog.info("  PE Images  : %u total (%u DLLs, %u EXEs)", .{
-        pe_loader.getImageCount(), pe_loader.getDllCount(), pe_loader.getExeCount(),
-    });
-    klog.info("  ELF Images : %u total (%u shared objects)", .{
-        elf_loader.getImageCount(), elf_loader.getSharedCount(),
-    });
-    klog.info("  Consoles   : %u", .{console_mod.getConsoleCount()});
-    klog.info("  Win32 Procs: %u registered", .{subsys.getWin32ProcessCount()});
-    klog.info("  WinStations: %u", .{subsys.getStationCount()});
-    klog.info("  Desktops   : %u", .{subsys.getTotalDesktopCount()});
-    klog.info("  GUI Windows: %u", .{user32_mod.getWindowCount()});
-    klog.info("  GDI Objects: %u", .{gdi32_mod.getGdiObjectCount()});
-    klog.info("  WOW64 Procs: %u (thunks=%u)", .{
-        wow64_mod.getActiveWow64Count(), wow64_mod.getThunkCount(),
-    });
-    klog.info("  PE32 Images: %u (32-bit), PE64: %u (64-bit)", .{
-        pe_loader.getPe32Count(), pe_loader.getPe64Count(),
-    });
+    klog.info("=== ZirconOS v1.0 Kernel Ready ===", .{});
+    klog.info("Architecture : x86_64", .{});
+    klog.info("Processes    : %u", .{@import("ps/process.zig").getProcessCount()});
+    klog.info("Sessions     : %u", .{smss.getSessionCount()});
+    klog.info("Heap         : %u/%u bytes used", .{ heap.usedBytes(), heap.totalBytes() });
+    klog.info("I/O Devices  : %u, Drivers: %u", .{ io.getDeviceCount(), io.getDriverCount() });
     klog.info("", .{});
 
     // ═══ Shell Mode Selection ═══
     if (boot_mode == .cmd) {
-        klog.info("", .{});
         klog.info("=== Entering CMD Shell Mode ===", .{});
-        klog.info("", .{});
         cmd_mod.runInteractiveShell();
     }
 
     if (boot_mode == .powershell) {
-        klog.info("", .{});
         klog.info("=== Entering PowerShell Mode ===", .{});
-        klog.info("", .{});
         ps_mod.runInteractiveShell();
     }
 
-    // ═══ Normal Boot: Demo Sequence ═══
-    klog.info("--- Starting CMD Shell Demo ---", .{});
-    klog.info("", .{});
-
+    // ═══ Normal Text Mode: Demo + Shell ═══
     cmd_mod.runBootSequence();
-
-    klog.info("", .{});
-    klog.info("--- Starting PowerShell Demo ---", .{});
-    klog.info("", .{});
-
     ps_mod.runBootSequence();
-
-    // ═══ Phase 9: Win32 App Demo ═══
-    klog.info("", .{});
-    klog.info("--- Phase 9: Win32 Application Execution Demo ---", .{});
-    klog.info("", .{});
-
     exec.runDemoApps();
-
-    // ═══ Phase 10: GUI Demo ═══
-    klog.info("", .{});
-    klog.info("--- Phase 10: Graphical Subsystem Demo ---", .{});
-    klog.info("", .{});
-
     gdi32_mod.runGdiDemo();
     user32_mod.runGuiDemo();
-
-    // ═══ Phase 11: WOW64 Demo ═══
-    klog.info("", .{});
-    klog.info("--- Phase 11: WOW64 Compatibility Demo ---", .{});
-    klog.info("", .{});
-
     wow64_mod.runWow64Demo();
 
-    // ═══ System Ready ═══
-    klog.info("", .{});
-    klog.info("=== System Ready (Phase 0-11 Complete) ===", .{});
-    klog.info("Win32 subsystem: %u processes, %u API calls", .{
-        subsys.getWin32ProcessCount(), subsys.getApiCallCount(),
-    });
-    klog.info("Exec engine: %u apps launched, %u running", .{
-        exec.getTotalLaunched(), exec.getRunningCount(),
-    });
-    klog.info("GUI subsystem: %u windows, %u messages, %u GDI draw calls", .{
-        user32_mod.getTotalWindowsCreated(),
-        user32_mod.getTotalMessagesProcessed(),
-        gdi32_mod.getTotalDrawCalls(),
-    });
-    klog.info("WOW64: %u 32-bit processes, %u syscall translations", .{
-        wow64_mod.getTotalWow64Count(),
-        wow64_mod.getTotalSyscallTranslations(),
-    });
-
-    // ═══ Enter Interactive CMD Shell ═══
     klog.info("", .{});
     klog.info("=== Entering Interactive CMD Shell ===", .{});
     klog.info("Type 'help' for available commands.", .{});
@@ -451,6 +415,7 @@ fn startGeneric() noreturn {
     const user32_mod = @import("subsystems/win32/user32.zig");
     const gdi32_mod = @import("subsystems/win32/gdi32.zig");
     const wow64_mod = @import("subsystems/win32/wow64.zig");
+    const sys_config = @import("config/config.zig");
 
     arch.initSerial();
 
@@ -464,6 +429,10 @@ fn startGeneric() noreturn {
     } else {
         klog.info("Build: RELEASE mode (optimized)", .{});
     }
+
+    klog.info("--- Loading System Configuration ---", .{});
+    sys_config.init();
+    klog.info("Config: %u total entries loaded", .{sys_config.getTotalConfigEntries()});
 
     klog.info("--- Phase 1: Boot + Early Kernel ---", .{});
 
@@ -501,6 +470,8 @@ fn startGeneric() noreturn {
     smss.init(&alloc);
 
     klog.info("--- Phase 6: I/O + File + Driver ---", .{});
+    const drivers_generic = @import("drivers/mod.zig");
+    drivers_generic.init();
     vfs_mod.init();
     fat32_mod.init();
     ntfs_mod.init();
@@ -529,11 +500,12 @@ fn startGeneric() noreturn {
     wow64_mod.init();
 
     klog.info("", .{});
-    klog.info("=== ZirconOS v1.0 Kernel Ready (Phase 0-11) ===", .{});
+    klog.info("=== ZirconOS v1.0 Kernel Ready (Phase 0-12) ===", .{});
     klog.info("Architecture : %s", .{arch.impl.name});
     klog.info("Processes    : %u", .{@import("ps/process.zig").getProcessCount()});
     klog.info("Sessions     : %u", .{smss.getSessionCount()});
     klog.info("Heap         : %u/%u bytes used", .{ heap.usedBytes(), heap.totalBytes() });
+    klog.info("I/O Devices  : %u, Drivers: %u", .{ io.getDeviceCount(), io.getDriverCount() });
     klog.info("", .{});
 
     cmd_mod.runBootSequence();

@@ -25,21 +25,29 @@ ZirconOS/
 ├── build.zig.zon          # Zig 依赖声明
 ├── run.sh                 # 构建与运行脚本
 ├── Makefile               # Make 便捷入口
+├── config/                # 系统配置
+│   ├── system.conf        #   系统核心参数
+│   ├── boot.conf          #   引导配置
+│   ├── desktop.conf       #   桌面环境配置（主题选择、分辨率、窗口管理）
+│   └── defaults.zig       #   编译时嵌入配置数据
 ├── boot/
 │   ├── grub/grub.cfg      # GRUB 引导配置 (系统选择菜单)
-│   └── uefi/main.zig      # UEFI 启动应用
+│   ├── uefi/main.zig      # UEFI 启动应用
+│   └── zbm/               # ZirconOS Boot Manager (BIOS/MBR/GPT)
 ├── link/                  # 各架构链接脚本
 │   └── x86_64.ld / aarch64.ld / loong64.ld / riscv64.ld / mips64el.ld
 ├── src/                   # 内核源码
 │   ├── main.zig           # 内核入口 (Phase 0-11 启动流程)
-│   ├── arch.zig           # 架构抽象分发层
+│   ├── config/            # 配置解析器
 │   ├── arch/              # 架构相关代码
 │   │   ├── x86_64/        #   Multiboot2, 分页, IDT, ISR, Syscall
 │   │   ├── aarch64/       #   AArch64 启动, 分页
-│   │   └── (loong64, riscv64, mips64el stubs)
+│   │   └── (loong64, riscv64, mips64el)
 │   ├── hal/               # 硬件抽象层
-│   │   ├── x86_64/        #   VGA, PIC, PIT, Port I/O, Serial, GDT
-│   │   └── aarch64/       #   PL011 UART
+│   │   ├── x86_64/        #   VGA, PIC, PIT, Port I/O, Serial, GDT, Framebuffer
+│   │   └── aarch64/       #   GIC, Timer, PL011 UART
+│   ├── drivers/           # 设备驱动
+│   │   └── video/         #   VGA, HDMI, Framebuffer, Display Manager
 │   ├── ke/                # Kernel Executive - 调度, 定时, 中断, 同步
 │   ├── mm/                # Memory Manager - 物理帧分配, 虚拟内存, 堆
 │   ├── ob/                # Object Manager - 对象/句柄表/命名空间
@@ -52,22 +60,54 @@ ZirconOS/
 │   ├── loader/            # Loader - PE32/PE32+/ELF
 │   ├── libs/              # 用户态 API 库
 │   │   ├── ntdll.zig      #   Native API (Nt*/Rtl*/Dbg*)
-│   │   └── kernel32.zig   #   Win32 Base API (进程/文件/控制台/内存/模块)
+│   │   └── kernel32.zig   #   Win32 Base API
 │   ├── servers/           # 系统服务
 │   │   ├── server.zig     #   Process Server (PID 1)
 │   │   └── smss.zig       #   Session Manager (SMSS)
 │   └── subsystems/        # 子系统实现
 │       └── win32/         #   Win32 子系统
-│           ├── console.zig    控制台运行时
-│           ├── cmd.zig        CMD 命令提示符
-│           ├── powershell.zig PowerShell
 │           ├── subsystem.zig  csrss 子系统服务器
 │           ├── exec.zig       Win32 应用执行引擎
 │           ├── user32.zig     窗口/消息 API
 │           ├── gdi32.zig      图形设备接口 API
+│           ├── console.zig    控制台运行时
+│           ├── cmd.zig        CMD 命令提示符
+│           ├── powershell.zig PowerShell
 │           └── wow64.zig      WOW64 32位兼容层
+├── 3rdparty/              # 桌面主题（独立子项目）
+│   ├── ZirconOSClassic/   #   Windows 2000 经典主题
+│   ├── ZirconOSLuna/      #   Windows XP Luna 主题 ★ 已完整实现
+│   ├── ZirconOSAero/      #   Windows Vista/7 Aero 毛玻璃主题
+│   ├── ZirconOSModern/    #   Windows 8/8.1 Metro 扁平磁贴主题
+│   ├── ZirconOSFluent/    #   Windows 10 Fluent Design 主题
+│   ├── ZirconOSSunValley/ #   Windows 11 Sun Valley 主题
+│   └── README.md          #   桌面主题总览
 └── docs/                  # 设计文档
 ```
+
+## 桌面主题
+
+ZirconOS 支持六套 Windows 风格桌面主题，覆盖 Windows 2000 到 Windows 11 的完整视觉演进。
+每套主题是独立的 Zig 子项目，位于 `3rdparty/` 目录下。
+
+| 主题 | Windows 版本 | 状态 | 特色 |
+|------|-------------|------|------|
+| Classic | Windows 2000 | 框架 | 3D 灰色按钮、直角窗口、极简高效 |
+| **Luna** | **Windows XP** | **✅ 已实现** | 蓝色渐变任务栏、绿色开始按钮、圆角边框 |
+| Aero | Vista / 7 | 框架 | 毛玻璃透明边框、Flip 3D、Aero Snap |
+| Modern | Windows 8 | 框架 | 全屏磁贴、Metro 扁平化、Charms 栏 |
+| Fluent | Windows 10 | 框架 | 亚克力材质、暗色模式、Reveal 效果 |
+| Sun Valley | Windows 11 | 框架 | Mica 云母、大圆角、居中任务栏 |
+
+桌面主题由 `config/desktop.conf` 配置选择：
+
+```ini
+[desktop]
+theme = luna              # classic | luna | aero | modern | fluent | sunvalley
+color_scheme = blue       # 主题特定配色方案
+```
+
+详细文档：[`3rdparty/README.md`](3rdparty/README.md)
 
 ## 依赖
 
