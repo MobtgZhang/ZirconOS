@@ -29,6 +29,17 @@ multiboot2_header:
     .long  8                  # size = 8
 multiboot2_header_end:
 
+# ── UEFI Boot Vector Table ──
+# Provides kernel_main and stack_top addresses for the UEFI boot path.
+# Magic "UEFI" (0x55454649) marks this table for discovery by the UEFI loader.
+.section .uefi_vector, "a"
+.align 8
+_uefi_vector:
+    .long 0x55454649
+    .long 0x00000000
+    .quad kernel_main
+    .quad stack_top
+
 # ── BSS: Page tables and kernel stack ──
 .section .bss
 .align 4096

@@ -10,6 +10,11 @@ SECTIONS
     *(.multiboot2)
   }
 
+  .uefi_vector : ALIGN(8)
+  {
+    *(.uefi_vector)
+  }
+
   .text : ALIGN(4K)
   {
     *(.text .text.*)

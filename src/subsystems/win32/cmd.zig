@@ -204,65 +204,84 @@ pub const CmdShell = struct {
         con.writeLine(self.current_dir[0..self.current_dir_len]);
         con.writeLine("");
 
+        const is_root = (self.current_dir_len <= 3);
+        if (!is_root) {
+            con.writeLine("2024/01/01  00:00    <DIR>          .");
+            con.writeLine("2024/01/01  00:00    <DIR>          ..");
+        }
+
         var entries: [32]vfs.DirEntry = [_]vfs.DirEntry{.{}} ** 32;
         var total_files: usize = 0;
         var total_dirs: usize = 0;
 
-        const vol = fat32.getVolume();
-        for (vol.root_entries[0..vol.root_entry_count]) |*fat_entry| {
-            if (fat_entry.isFree() or fat_entry.isVolumeId()) continue;
-            if (total_files + total_dirs >= entries.len) break;
+        if (is_root) {
+            const vol = fat32.getVolume();
+            for (vol.root_entries[0..vol.root_entry_count]) |*fat_entry| {
+                if (fat_entry.isFree() or fat_entry.isVolumeId()) continue;
+                if (total_files + total_dirs >= entries.len) break;
 
-            var e = &entries[total_files + total_dirs];
-            e.* = .{};
+                var e = &entries[total_files + total_dirs];
+                e.* = .{};
 
-            var pos: usize = 0;
-            for (fat_entry.name) |c| {
-                if (c == ' ') break;
-                if (pos < e.name.len) {
-                    e.name[pos] = c;
-                    pos += 1;
-                }
-            }
-            var has_ext = false;
-            for (fat_entry.ext) |c| {
-                if (c != ' ') {
-                    has_ext = true;
-                    break;
-                }
-            }
-            if (has_ext) {
-                if (pos < e.name.len) {
-                    e.name[pos] = '.';
-                    pos += 1;
-                }
-                for (fat_entry.ext) |c| {
+                var pos: usize = 0;
+                for (fat_entry.name) |c| {
                     if (c == ' ') break;
                     if (pos < e.name.len) {
                         e.name[pos] = c;
                         pos += 1;
                     }
                 }
-            }
-            e.name_len = pos;
-            e.file_size = fat_entry.file_size;
+                var has_ext = false;
+                for (fat_entry.ext) |c| {
+                    if (c != ' ') {
+                        has_ext = true;
+                        break;
+                    }
+                }
+                if (has_ext) {
+                    if (pos < e.name.len) {
+                        e.name[pos] = '.';
+                        pos += 1;
+                    }
+                    for (fat_entry.ext) |c| {
+                        if (c == ' ') break;
+                        if (pos < e.name.len) {
+                            e.name[pos] = c;
+                            pos += 1;
+                        }
+                    }
+                }
+                e.name_len = pos;
+                e.file_size = fat_entry.file_size;
 
-            if (fat_entry.isDirectory()) {
-                e.file_type = .directory;
-                total_dirs += 1;
-            } else {
-                e.file_type = .regular;
-                total_files += 1;
+                if (fat_entry.isDirectory()) {
+                    e.file_type = .directory;
+                    total_dirs += 1;
+                } else {
+                    e.file_type = .regular;
+                    total_files += 1;
+                }
             }
+        } else {
+            con.writeLine("               0 File(s)");
+            con.writeLine("               2 Dir(s)");
+            return;
         }
 
         const entry_count = total_files + total_dirs;
+        var size_buf: [16]u8 = undefined;
         for (entries[0..entry_count]) |*e| {
             _ = con.writeOutput("2024/01/01  00:00    ");
             if (e.file_type == .directory) {
                 _ = con.writeOutput("<DIR>          ");
             } else {
-                _ = con.writeOutput("               ");
+                const size_str = formatUint(&size_buf, @as(usize, @intCast(e.file_size)));
+                var pad: usize = 0;
+                while (pad + size_str.len < 15) : (pad += 1) {
+                    _ = con.writeOutput(" ");
+                }
+                _ = con.writeOutput(size_str);
+                _ = con.writeOutput(" ");
             }
             con.writeLine(e.name[0..e.name_len]);
         }
@@ -288,9 +307,10 @@ pub const CmdShell = struct {
         }
         if (trimmed.len == 2 and trimmed[0] == '.' and trimmed[1] == '.') {
             if (self.current_dir_len > 3) {
-                var i = self.current_dir_len - 1;
+                var i = self.current_dir_len;
                 if (i > 0 and self.current_dir[i - 1] == '\\') i -= 1;
-                while (i > 2 and self.current_dir[i - 1] != '\\') i -= 1;
+                while (i > 3 and self.current_dir[i - 1] != '\\') i -= 1;
+                if (i > 3) i -= 1;
                 self.current_dir_len = i;
             }
             return;
@@ -339,7 +359,32 @@ pub const CmdShell = struct {
             con.writeLine("The syntax of the command is incorrect.");
             return;
         }
-        con.writeLine("[File content display not yet implemented]");
+        const vol = fat32.getVolume();
+        const entry = vol.findEntry(trimmed);
+        if (entry) |e| {
+            if (e.isDirectory()) {
+                con.writeLine("Access is denied.");
+                return;
+            }
+            const cluster = e.getFirstCluster();
+            if (cluster >= 2) {
+                var read_buf: [4096]u8 = undefined;
+                const bytes = vol.readData(cluster, &read_buf);
+                if (bytes > 0) {
+                    const display_len = @min(bytes, @as(usize, @intCast(e.file_size)));
+                    if (display_len > 0) {
+                        con.writeLine(read_buf[0..display_len]);
+                    }
+                } else {
+                    con.writeLine("");
+                }
+            } else {
+                con.writeLine("");
+            }
+        } else {
+            _ = con.writeOutput("The system cannot find the file specified: ");
+            con.writeLine(trimmed);
+        }
     }
 
     fn cmdMkdir(self: *CmdShell, args: []const u8) void {
@@ -350,10 +395,16 @@ pub const CmdShell = struct {
             return;
         }
         const vol = fat32.getVolume();
+        if (vol.findEntry(trimmed) != null) {
+            _ = con.writeOutput("A subdirectory or file ");
+            _ = con.writeOutput(trimmed);
+            con.writeLine(" already exists.");
+            return;
+        }
         if (vol.createDirectory(trimmed)) |_| {
             return;
         }
-        con.writeLine("A subdirectory or file already exists.");
+        con.writeLine("An error occurred while creating the directory.");
     }
 
     fn cmdDel(self: *CmdShell, args: []const u8) void {
@@ -365,7 +416,8 @@ pub const CmdShell = struct {
         }
         const vol = fat32.getVolume();
         if (!vol.removeEntry(trimmed)) {
-            con.writeLine("Could Not Find ");
+            _ = con.writeOutput("Could Not Find ");
+            con.writeLine(trimmed);
         }
     }
 
@@ -444,7 +496,23 @@ pub const CmdShell = struct {
 
     fn cmdDate(self: *CmdShell) void {
         const con = console.getConsole(self.console_id) orelse return;
-        con.writeLine("The current date is: 2024/01/01 Mon");
+        var buf: [16]u8 = undefined;
+        const ticks = scheduler.getTicks();
+        const total_secs = ticks / 100;
+        const days_since_boot = total_secs / 86400;
+        const base_year: usize = 2024;
+        const base_month: usize = 1;
+        const base_day = 1 + days_since_boot;
+        const day_of_week_names = [_][]const u8{ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+        const dow_idx = days_since_boot % 7;
+        _ = con.writeOutput("The current date is: ");
+        _ = con.writeOutput(formatUint(&buf, base_year));
+        _ = con.writeOutput("/");
+        _ = con.writeOutput(formatUintPad2(&buf, base_month));
+        _ = con.writeOutput("/");
+        _ = con.writeOutput(formatUintPad2(&buf, @intCast(base_day)));
+        _ = con.writeOutput(" ");
+        con.writeLine(day_of_week_names[dow_idx]);
     }
 
     fn cmdTime(self: *CmdShell) void {
@@ -456,11 +524,11 @@ pub const CmdShell = struct {
         const mins = (secs % 3600) / 60;
         const s = secs % 60;
         _ = con.writeOutput("The current time is: ");
-        _ = con.writeOutput(formatUint(&count_buf, @intCast(hrs)));
+        _ = con.writeOutput(formatUintPad2(&count_buf, @intCast(hrs)));
         _ = con.writeOutput(":");
-        _ = con.writeOutput(formatUint(&count_buf, @intCast(mins)));
+        _ = con.writeOutput(formatUintPad2(&count_buf, @intCast(mins)));
         _ = con.writeOutput(":");
-        con.writeLine(formatUint(&count_buf, @intCast(s)));
+        con.writeLine(formatUintPad2(&count_buf, @intCast(s)));
     }
 
     fn cmdSystemInfo(self: *CmdShell) void {
@@ -489,13 +557,39 @@ pub const CmdShell = struct {
 
     fn cmdTaskList(self: *CmdShell) void {
         const con = console.getConsole(self.console_id) orelse return;
+        var count_buf: [16]u8 = undefined;
         con.writeLine("");
         con.writeLine("Image Name                     PID Session Name        Mem Usage");
         con.writeLine("========================= ======== ================ ===========");
-        con.writeLine("System                           1 Services                 0 K");
-        con.writeLine("smss.exe                         2 Services                 0 K");
-        con.writeLine("csrss.exe                        3 Console                  0 K");
-        con.writeLine("cmd.exe                          4 Console                  0 K");
+
+        const proc_list = process.getProcessList();
+        var shown: usize = 0;
+        for (proc_list) |*p| {
+            if (p.state != .active) continue;
+            _ = con.writeOutput(p.name[0..p.name_len]);
+            var pad: usize = p.name_len;
+            while (pad < 26) : (pad += 1) {
+                _ = con.writeOutput(" ");
+            }
+            const pid_str = formatUint(&count_buf, @as(usize, p.pid));
+            var pid_pad: usize = pid_str.len;
+            while (pid_pad < 8) : (pid_pad += 1) {
+                _ = con.writeOutput(" ");
+            }
+            _ = con.writeOutput(pid_str);
+            if (p.is_system) {
+                _ = con.writeOutput(" Services");
+            } else {
+                _ = con.writeOutput(" Console ");
+            }
+            con.writeLine("                 0 K");
+            shown += 1;
+        }
+
+        if (shown == 0) {
+            con.writeLine("System                           1 Services                 0 K");
+            con.writeLine("cmd.exe                          4 Console                  0 K");
+        }
         con.writeLine("");
     }
 
@@ -524,8 +618,36 @@ pub const CmdShell = struct {
     }
 
     fn cmdColor(self: *CmdShell, args: []const u8) void {
-        _ = self;
-        _ = args;
+        const con = console.getConsole(self.console_id) orelse return;
+        const trimmed = trim(args);
+        if (trimmed.len == 0) {
+            con.writeLine("Sets the default console foreground and background colors.");
+            con.writeLine("");
+            con.writeLine("COLOR [attr]");
+            con.writeLine("");
+            con.writeLine("  attr  Specifies color attribute of console output");
+            con.writeLine("        The first hex digit is background, the second is foreground.");
+            con.writeLine("        0=Black 1=Blue 2=Green 3=Cyan 4=Red 5=Magenta 6=Brown 7=White");
+            return;
+        }
+        if (trimmed.len >= 2) {
+            const bg_val = hexDigit(trimmed[0]);
+            const fg_val = hexDigit(trimmed[1]);
+            if (bg_val) |bg| {
+                if (fg_val) |fg| {
+                    con.setColor(@enumFromInt(fg), @enumFromInt(bg));
+                    return;
+                }
+            }
+        }
+        con.writeLine("Invalid color specification.");
+    }
+
+    fn hexDigit(c: u8) ?u8 {
+        if (c >= '0' and c <= '9') return c - '0';
+        if (c >= 'a' and c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' and c <= 'F') return c - 'A' + 10;
+        return null;
     }
 
     fn cmdPath(self: *CmdShell, args: []const u8) void {
@@ -693,6 +815,11 @@ pub fn runBootSequence() void {
     };
 
     for (demo_commands) |cmd_str| {
+        const con = console.getConsole(cmd_shell.console_id);
+        if (con) |c| {
+            _ = c.writeOutput(cmd_str);
+            c.writeLine("");
+        }
         cmd_shell.executeCommand(cmd_str);
         cmd_shell.showPrompt();
     }
@@ -785,6 +912,16 @@ fn trim(s: []const u8) []const u8 {
     var end: usize = s.len;
     while (end > start and (s[end - 1] == ' ' or s[end - 1] == '\t' or s[end - 1] == '\r' or s[end - 1] == '\n')) end -= 1;
     return s[start..end];
+}
+
+fn formatUintPad2(buf: []u8, value: usize) []const u8 {
+    if (buf.len < 2) return buf[0..0];
+    if (value < 10) {
+        buf[0] = '0';
+        buf[1] = '0' + @as(u8, @intCast(value));
+        return buf[0..2];
+    }
+    return formatUint(buf, value);
 }
 
 fn formatUint(buf: []u8, value: usize) []const u8 {

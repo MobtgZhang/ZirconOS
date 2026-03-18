@@ -339,28 +339,386 @@ fn displayBootProgress(out: anytype) void {
     puts(out, "\r\n");
 }
 
+// ── ELF64 Structures ──
+
+const Elf64_Ehdr = extern struct {
+    e_ident: [16]u8,
+    e_type: u16,
+    e_machine: u16,
+    e_version: u32,
+    e_entry: u64,
+    e_phoff: u64,
+    e_shoff: u64,
+    e_flags: u32,
+    e_ehsize: u16,
+    e_phentsize: u16,
+    e_phnum: u16,
+    e_shentsize: u16,
+    e_shnum: u16,
+    e_shstrndx: u16,
+};
+
+const Elf64_Phdr = extern struct {
+    p_type: u32,
+    p_flags: u32,
+    p_offset: u64,
+    p_vaddr: u64,
+    p_paddr: u64,
+    p_filesz: u64,
+    p_memsz: u64,
+    p_align: u64,
+};
+
+const PT_LOAD: u32 = 1;
+
+const UEFI_VECTOR_MAGIC: u32 = 0x55454649;
+const MULTIBOOT2_MAGIC: u32 = 0x36d76289;
+
+const UefiVectorTable = extern struct {
+    magic: u32,
+    version: u32,
+    kernel_entry: u64,
+    stack_addr: u64,
+};
+
 // ── Kernel Loading (UEFI) ──
 
 fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
-    _ = out;
-    _ = bs;
+    // ── Step 1: Open kernel.elf from ESP ──
+    puts(out, "    [*] Opening kernel from ESP...\r\n");
 
-    // TODO: Implement UEFI file protocol to load kernel.elf from ESP
-    //
-    // Implementation outline:
-    //   1. Get loaded image protocol to find boot device
-    //   2. Open Simple File System protocol on boot device
-    //   3. Open volume root
-    //   4. Open kernel.elf file
-    //   5. Read ELF header, parse program headers
-    //   6. Allocate pages for each LOAD segment
-    //   7. Read segments into memory
-    //   8. Build Multiboot2-compatible boot info structure
-    //   9. Exit boot services
-    //  10. Jump to kernel entry point with magic + info pointer
-    //
-    // This will be implemented in the next iteration when the
-    // kernel supports direct UEFI boot handoff.
+    const loaded_image = bs.openProtocol(
+        uefi.protocol.LoadedImage,
+        uefi.handle,
+        .{ .by_handle_protocol = .{} },
+    ) catch {
+        puts(out, "    [!!] Failed to get LoadedImage protocol\r\n");
+        return;
+    } orelse {
+        puts(out, "    [!!] LoadedImage protocol is null\r\n");
+        return;
+    };
+
+    const device_handle = loaded_image.device_handle orelse {
+        puts(out, "    [!!] No boot device handle\r\n");
+        return;
+    };
+
+    const sfs = bs.openProtocol(
+        uefi.protocol.SimpleFileSystem,
+        device_handle,
+        .{ .by_handle_protocol = .{} },
+    ) catch {
+        puts(out, "    [!!] Failed to get SimpleFileSystem\r\n");
+        return;
+    } orelse {
+        puts(out, "    [!!] SimpleFileSystem is null\r\n");
+        return;
+    };
+
+    const root = sfs.openVolume() catch {
+        puts(out, "    [!!] Failed to open ESP volume\r\n");
+        return;
+    };
+
+    const kernel_file = root.open(
+        unicode.utf8ToUtf16LeStringLiteral(KERNEL_PATH),
+        .read,
+        .{},
+    ) catch {
+        puts(out, "    [!!] kernel.elf not found on ESP\r\n");
+        return;
+    };
+
+    puts(out, "    [*] kernel.elf opened\r\n");
+
+    // ── Step 2: Read kernel file into memory ──
+    var info_buf: [256]u8 align(8) = undefined;
+    const file_info = kernel_file.getInfo(.file, @as([]align(8) u8, &info_buf)) catch {
+        puts(out, "    [!!] Failed to get kernel file info\r\n");
+        return;
+    };
+    const file_size: usize = @intCast(file_info.file_size);
+
+    puts(out, "    [*] Kernel size: ");
+    printDecimal(out, @intCast(file_size / 1024));
+    puts(out, " KB\r\n");
+
+    const file_data = bs.allocatePool(.loader_data, file_size) catch {
+        puts(out, "    [!!] Failed to allocate memory for kernel\r\n");
+        return;
+    };
+
+    var total_read: usize = 0;
+    while (total_read < file_size) {
+        const n = kernel_file.read(file_data[total_read..]) catch {
+            puts(out, "    [!!] Failed to read kernel file\r\n");
+            return;
+        };
+        if (n == 0) break;
+        total_read += n;
+    }
+    _ = kernel_file.close() catch {};
+
+    puts(out, "    [*] Kernel file read into buffer\r\n");
+
+    // ── Step 3: Parse ELF64 header ──
+    if (file_size < @sizeOf(Elf64_Ehdr)) {
+        puts(out, "    [!!] File too small for ELF header\r\n");
+        return;
+    }
+
+    const ehdr: *const Elf64_Ehdr = @ptrCast(@alignCast(file_data.ptr));
+
+    if (ehdr.e_ident[0] != 0x7F or ehdr.e_ident[1] != 'E' or
+        ehdr.e_ident[2] != 'L' or ehdr.e_ident[3] != 'F')
+    {
+        puts(out, "    [!!] Invalid ELF magic\r\n");
+        return;
+    }
+    if (ehdr.e_ident[4] != 2) {
+        puts(out, "    [!!] Not a 64-bit ELF\r\n");
+        return;
+    }
+
+    puts(out, "    [*] ELF64 valid, ");
+    printDecimal(out, ehdr.e_phnum);
+    puts(out, " program headers\r\n");
+
+    // ── Step 4: Load PT_LOAD segments into physical memory ──
+    var segments_loaded: u32 = 0;
+    for (0..ehdr.e_phnum) |i| {
+        const ph_off: usize = @intCast(ehdr.e_phoff + i * ehdr.e_phentsize);
+        if (ph_off + @sizeOf(Elf64_Phdr) > file_size) break;
+
+        const phdr: *const Elf64_Phdr = @ptrCast(@alignCast(file_data.ptr + ph_off));
+        if (phdr.p_type != PT_LOAD) continue;
+        if (phdr.p_memsz == 0) continue;
+
+        const num_pages: usize = @intCast((phdr.p_memsz + 4095) / 4096);
+        const page_base: usize = @intCast(phdr.p_paddr & ~@as(u64, 0xFFF));
+
+        _ = bs.allocatePages(
+            .{ .address = @ptrFromInt(page_base) },
+            .loader_data,
+            num_pages,
+        ) catch {
+            // Pages might overlap or be pre-allocated; continue anyway
+        };
+
+        const dst: [*]u8 = @ptrFromInt(@as(usize, @intCast(phdr.p_paddr)));
+        const filesz: usize = @intCast(phdr.p_filesz);
+        const memsz: usize = @intCast(phdr.p_memsz);
+        const offset: usize = @intCast(phdr.p_offset);
+
+        if (filesz > 0 and offset + filesz <= file_size) {
+            const src = file_data.ptr + offset;
+            @memcpy(dst[0..filesz], src[0..filesz]);
+        }
+
+        if (memsz > filesz) {
+            @memset(dst[filesz..memsz], 0);
+        }
+
+        segments_loaded += 1;
+    }
+
+    puts(out, "    [*] Loaded ");
+    printDecimal(out, segments_loaded);
+    puts(out, " ELF segments\r\n");
+
+    // ── Step 5: Find UEFI vector table in loaded kernel ──
+    // Scan the first loaded segment for the magic pattern 0x55454649
+    const kernel_base: usize = blk: {
+        for (0..ehdr.e_phnum) |i| {
+            const pho: usize = @intCast(ehdr.e_phoff + i * ehdr.e_phentsize);
+            if (pho + @sizeOf(Elf64_Phdr) > file_size) continue;
+            const ph: *const Elf64_Phdr = @ptrCast(@alignCast(file_data.ptr + pho));
+            if (ph.p_type == PT_LOAD) break :blk @as(usize, @intCast(ph.p_paddr));
+        }
+        break :blk 0;
+    };
+
+    var vec: ?*const UefiVectorTable = null;
+    if (kernel_base != 0) {
+        // Scan the first 64KB from kernel base for the magic pattern
+        const scan_end = kernel_base + 0x10000;
+        var addr = kernel_base;
+        while (addr + @sizeOf(UefiVectorTable) <= scan_end) : (addr += 8) {
+            const candidate: *const UefiVectorTable = @ptrFromInt(addr);
+            if (candidate.magic == UEFI_VECTOR_MAGIC and candidate.version == 0 and
+                candidate.kernel_entry > kernel_base and candidate.stack_addr > kernel_base)
+            {
+                vec = candidate;
+                break;
+            }
+        }
+    }
+
+    if (vec == null) {
+        puts(out, "    [!!] UEFI vector table not found in kernel\r\n");
+        return;
+    }
+
+    const kernel_entry = vec.?.kernel_entry;
+    puts(out, "    [*] kernel_main at 0x");
+    printHex64(out, kernel_entry);
+    puts(out, "\r\n");
+
+    // ── Step 6: Build Multiboot2-compatible boot info ──
+    const boot_info_pages = bs.allocatePages(.{ .any = {} }, .loader_data, 2) catch {
+        puts(out, "    [!!] Failed to allocate boot info memory\r\n");
+        return;
+    };
+    const bi_base: [*]u8 = @ptrCast(boot_info_pages.ptr);
+    @memset(bi_base[0..8192], 0);
+
+    // Get UEFI memory map (final state) and build boot info from it
+    var mmap_buf: [32768]u8 align(@alignOf(uefi.tables.MemoryDescriptor)) = undefined;
+    const mmap = bs.getMemoryMap(@as([]align(@alignOf(uefi.tables.MemoryDescriptor)) u8, &mmap_buf)) catch {
+        puts(out, "    [!!] Failed to get memory map\r\n");
+        return;
+    };
+
+    const boot_info_addr = buildBootInfo(bi_base, mmap, entries[selected].cmdline);
+    puts(out, "    [*] Multiboot2 boot info ready\r\n");
+
+    // ── Step 7: Exit boot services ──
+    puts(out, "    [*] Exiting boot services...\r\n");
+
+    bs.exitBootServices(uefi.handle, mmap.info.key) catch {
+        // Key changed, retry
+        const mmap2 = bs.getMemoryMap(@as([]align(@alignOf(uefi.tables.MemoryDescriptor)) u8, &mmap_buf)) catch return;
+        _ = buildBootInfo(bi_base, mmap2, entries[selected].cmdline);
+        bs.exitBootServices(uefi.handle, mmap2.info.key) catch return;
+    };
+
+    // ═══ NO MORE UEFI CALLS PAST THIS POINT ═══
+
+    // ── Step 8: Jump to kernel_main ──
+    // kernel_main uses System V AMD64 ABI: RDI=magic, RSI=info_addr
+    asm volatile ("cli");
+    asm volatile (
+        \\mov %[magic], %%rdi
+        \\mov %[info], %%rsi
+        \\jmp *%[entry]
+        :
+        : [entry] "r" (kernel_entry),
+          [magic] "r" (@as(u64, MULTIBOOT2_MAGIC)),
+          [info] "r" (@as(u64, boot_info_addr)),
+        : .{ .rdi = true, .rsi = true }
+    );
+    unreachable;
+}
+
+fn buildBootInfo(
+    bi_base: [*]u8,
+    mmap: uefi.tables.MemoryMapSlice,
+    cmdline: []const u8,
+) usize {
+    var off: usize = 8; // skip BootInfoHeader (filled at end)
+
+    // Tag: command line (type=1)
+    {
+        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
+        p[0] = 1;
+        const str_sz: u32 = @intCast(cmdline.len + 1);
+        p[1] = 8 + str_sz;
+        @memcpy((bi_base + off + 8)[0..cmdline.len], cmdline);
+        (bi_base + off + 8)[cmdline.len] = 0;
+        off += (8 + str_sz + 7) & ~@as(usize, 7);
+    }
+
+    // Tag: basic memory info (type=4)
+    const meminfo_off = off;
+    {
+        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
+        p[0] = 4;
+        p[1] = 16;
+        p[2] = 640; // mem_lower KB (conventional below 1MB)
+        p[3] = 0; // mem_upper KB (filled after mmap scan)
+        off += 16;
+    }
+
+    // Tag: memory map (type=6)
+    {
+        const tag_start = off;
+        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
+        p[0] = 6;
+        p[2] = 24; // entry_size
+        p[3] = 0; // entry_version
+        var eoff: usize = 16;
+        var mem_upper_kb: u32 = 0;
+
+        var it = mmap.iterator();
+        while (it.next()) |desc| {
+            const mb_type: u32 = uefiToMb2MemType(desc.type);
+            const base = desc.physical_start;
+            const length = desc.number_of_pages * 4096;
+
+            const ep: [*]u8 = bi_base + tag_start + eoff;
+            @as(*u64, @ptrCast(@alignCast(ep))).* = base;
+            @as(*u64, @ptrCast(@alignCast(ep + 8))).* = length;
+            @as(*u32, @ptrCast(@alignCast(ep + 16))).* = mb_type;
+            @as(*u32, @ptrCast(@alignCast(ep + 20))).* = 0;
+
+            if (mb_type == 1 and base >= 0x100000) {
+                mem_upper_kb +|= @intCast(length / 1024);
+            }
+            eoff += 24;
+        }
+
+        p[1] = @intCast(eoff); // tag size
+
+        // Write mem_upper back to basic meminfo tag
+        const mi: [*]u32 = @ptrCast(@alignCast(bi_base + meminfo_off));
+        mi[3] = mem_upper_kb;
+
+        off += (eoff + 7) & ~@as(usize, 7);
+    }
+
+    // Tag: end (type=0)
+    {
+        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
+        p[0] = 0;
+        p[1] = 8;
+        off += 8;
+    }
+
+    // Fill boot info header
+    const hdr: [*]u32 = @ptrCast(@alignCast(bi_base));
+    hdr[0] = @intCast(off); // total_size
+    hdr[1] = 0; // reserved
+
+    return @intFromPtr(bi_base);
+}
+
+fn uefiToMb2MemType(t: uefi.tables.MemoryType) u32 {
+    return switch (t) {
+        .conventional_memory, .loader_code, .loader_data,
+        .boot_services_code, .boot_services_data,
+        => 1, // available
+        .acpi_reclaim_memory => 3,
+        .acpi_memory_nvs => 4,
+        .unusable_memory => 5,
+        else => 2, // reserved
+    };
+}
+
+fn printHex64(out: anytype, value: u64) void {
+    const hex = "0123456789abcdef";
+    var v = value;
+    var buf: [16]u8 = undefined;
+    var i: usize = 16;
+    while (i > 0) {
+        i -= 1;
+        buf[i] = hex[@as(usize, @intCast(v & 0xF))];
+        v >>= 4;
+    }
+    for (buf) |c| {
+        var u16buf: [1:0]u16 = .{@as(u16, c)};
+        _ = out.outputString(&u16buf) catch false;
+    }
 }
 
 // ── UEFI Helper Functions ──

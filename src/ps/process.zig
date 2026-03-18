@@ -162,3 +162,7 @@ pub fn getCurrentProcess() ?*Process {
 pub fn getProcessCount() usize {
     return process_count;
 }
+
+pub fn getProcessList() []Process {
+    return processes[0..process_count];
+}
