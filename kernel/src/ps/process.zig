@@ -1,32 +1,42 @@
 //! Process & Thread Model (NT style)
-//! Kernel provides process/thread abstraction
-//! Process Server handles creation policy via IPC
+//! Integrates with Object Manager, Handle Table, and Security Token
 
 const vm = @import("../mm/vm.zig");
 const FrameAllocator = @import("../mm/frame.zig").FrameAllocator;
+const ob = @import("../ob/object.zig");
+const token = @import("../se/token.zig");
+const klog = @import("../rtl/klog.zig");
 
 pub const MAX_PROCESSES: usize = 32;
 pub const MAX_THREADS_PER_PROCESS: usize = 8;
 
 pub const ProcessState = enum {
+    creating,
     active,
+    suspended,
     terminated,
 };
 
 pub const Process = struct {
-    pid: u32,
-    state: ProcessState,
-    address_space: ?vm.AddressSpace,
-    thread_count: usize,
-    is_process_server: bool,
+    header: ob.ObjectHeader = .{ .obj_type = .process },
+    pid: u32 = 0,
+    parent_pid: u32 = 0,
+    state: ProcessState = .creating,
+    address_space: ?vm.AddressSpace = null,
+    handle_table: ob.HandleTable = .{},
+    security_token: token.Token = .{},
+    thread_count: usize = 0,
+    is_system: bool = false,
+    exit_code: u32 = 0,
+    name: [32]u8 = [_]u8{0} ** 32,
+    name_len: usize = 0,
 
     pub fn init(pid: u32) Process {
         return .{
+            .header = .{ .obj_type = .process },
             .pid = pid,
-            .state = .active,
-            .address_space = null,
-            .thread_count = 0,
-            .is_process_server = false,
+            .state = .creating,
+            .handle_table = ob.HandleTable.init(pid),
         };
     }
 };
@@ -35,6 +45,7 @@ pub const ThreadState = enum {
     ready,
     running,
     blocked,
+    terminated,
 };
 
 pub const ThreadContext = struct {
@@ -45,29 +56,37 @@ pub const ThreadContext = struct {
     rbx: u64 = 0,
     rbp: u64 = 0,
     rip: u64 = 0,
+    rsp: u64 = 0,
+    rflags: u64 = 0x202,
 };
 
 pub const Thread = struct {
-    id: usize,
-    process_id: u32,
-    state: ThreadState,
-    context: ThreadContext,
-    stack: [4096]u8 align(16) = undefined,
-    stack_top: usize = 0,
+    header: ob.ObjectHeader = .{ .obj_type = .thread },
+    tid: u32 = 0,
+    process_id: u32 = 0,
+    state: ThreadState = .ready,
+    context: ThreadContext = .{},
+    kernel_stack_top: u64 = 0,
+    user_stack_top: u64 = 0,
+    priority: u8 = 0,
 };
 
 var processes: [MAX_PROCESSES]Process = undefined;
 var process_count: usize = 0;
 var next_pid: u32 = 1;
+var next_tid: u32 = 1;
 var current_pid: u32 = 0;
+var ps_initialized: bool = false;
 
 pub fn init() void {
     process_count = 0;
     next_pid = 1;
+    next_tid = 1;
     current_pid = 0;
     for (&processes) |*p| {
         p.* = Process.init(0);
     }
+    ps_initialized = true;
 }
 
 pub fn allocPid() ?u32 {
@@ -75,6 +94,12 @@ pub fn allocPid() ?u32 {
     const pid = next_pid;
     next_pid += 1;
     return pid;
+}
+
+pub fn allocTid() ?u32 {
+    const tid = next_tid;
+    next_tid += 1;
+    return tid;
 }
 
 pub fn createProcess(frame_alloc: *FrameAllocator) ?*Process {
@@ -87,8 +112,32 @@ pub fn createProcess(frame_alloc: *FrameAllocator) ?*Process {
     p.* = Process.init(pid);
     p.address_space = space;
     p.state = .active;
+    p.security_token = token.createSystemToken();
+    p.handle_table = ob.HandleTable.init(pid);
     process_count += 1;
+
+    ob.createObject(.process, @intFromPtr(&p.header));
+
     return p;
+}
+
+pub fn createSystemProcess(frame_alloc: *FrameAllocator, name: []const u8) ?*Process {
+    const p = createProcess(frame_alloc) orelse return null;
+    p.is_system = true;
+    const copy_len = @min(name.len, p.name.len);
+    @memcpy(p.name[0..copy_len], name[0..copy_len]);
+    p.name_len = copy_len;
+
+    klog.info("Process: '%s' created (PID=%u, system=true)", .{ name, p.pid });
+    return p;
+}
+
+pub fn terminateProcess(pid: u32, exit_code: u32) bool {
+    const p = findProcess(pid) orelse return false;
+    p.state = .terminated;
+    p.exit_code = exit_code;
+    klog.debug("Process: PID=%u terminated (exit_code=%u)", .{ pid, exit_code });
+    return true;
 }
 
 pub fn findProcess(pid: u32) ?*Process {
@@ -108,4 +157,8 @@ pub fn getCurrentPid() u32 {
 
 pub fn getCurrentProcess() ?*Process {
     return findProcess(current_pid);
+}
+
+pub fn getProcessCount() usize {
+    return process_count;
 }

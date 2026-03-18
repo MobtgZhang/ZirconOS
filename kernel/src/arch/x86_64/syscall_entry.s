@@ -1,19 +1,47 @@
-# Syscall 入口 (int 0x80, vector 128)
-# 调用时: rax=syscall_no, rdi,rsi,rdx,r10,r8,r9=args
-# 返回: rax=返回值
-# 栈布局 (int 同特权): rip, cs, rflags
+# ZirconOS Syscall Entry (int 0x80, vector 128)
+# Uses same register save/restore layout as ISR for unified InterruptFrame.
+# Syscall convention: rax=number, rdi,rsi,rdx,r10,r8,r9=args
+# Return value placed in saved rax on stack.
 
 .global syscall_entry
 syscall_entry:
-    # 保存 syscall 参数到栈，传递 rsp 给 C 函数
-    push %r9
-    push %r8
-    push %r10
+    push $0
+    push $128
+
+    push %rax
+    push %rbx
+    push %rcx
     push %rdx
     push %rsi
     push %rdi
-    push %rax
+    push %rbp
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+
     mov %rsp, %rdi
-    call syscall_dispatch
-    add $56, %rsp
+    call isr_common_handler
+
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rbp
+    pop %rdi
+    pop %rsi
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    add $16, %rsp
     iretq

@@ -1,5 +1,6 @@
-# x86_64 ISR stubs and common handler
-# Generates stub for each vector, pushes vector + error code, calls C handler
+# ZirconOS x86_64 ISR stubs with full register save/restore
+# Each stub pushes a fake error code (if needed) and the vector number,
+# then jumps to the common handler which saves all GP registers.
 
 .macro ISR_NOERR vec
 .global isr_stub_\vec
@@ -75,7 +76,7 @@ isr_stub_default:
     push $255
     jmp isr_common
 
-# ISR address lookup table (48 entries + 1 default)
+# ISR address lookup table
 .section .rodata
 .global isr_table
 .global isr_default_entry
@@ -95,14 +96,55 @@ isr_table:
 isr_default_entry:
     .quad isr_stub_default
 
+# ── Common ISR handler ──
+# Saves all GP registers, calls C handler, restores and returns via iretq.
+# Stack layout at handler call:
+#   RSP+0:   r15   RSP+8:   r14   RSP+16:  r13   RSP+24:  r12
+#   RSP+32:  r11   RSP+40:  r10   RSP+48:  r9    RSP+56:  r8
+#   RSP+64:  rbp   RSP+72:  rdi   RSP+80:  rsi   RSP+88:  rdx
+#   RSP+96:  rcx   RSP+104: rbx   RSP+112: rax
+#   RSP+120: vector  RSP+128: error_code
+#   RSP+136: rip   RSP+144: cs    RSP+152: rflags
+#   RSP+160: rsp   RSP+168: ss
 .section .text
-
-# Common handler: pops vector and error_code, calls C handler, returns
 .global isr_common
 isr_common:
+    push %rax
+    push %rbx
+    push %rcx
+    push %rdx
+    push %rsi
+    push %rdi
+    push %rbp
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+
+    mov %rsp, %rdi
+    call isr_common_handler
+
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rbp
     pop %rdi
     pop %rsi
-    call isr_common_handler
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+
+    add $16, %rsp
     iretq
 
 # load_idt(desc_ptr): loads the IDT register

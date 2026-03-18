@@ -1,6 +1,5 @@
 //! ZirconOS Kernel Logger (printk-style)
-//!
-//! Debug mode: full log output at all levels
+//! Debug mode: full log output at all levels, dual output (VGA + serial)
 //! Release mode: only KERN_ERR and above
 
 const arch = @import("../arch.zig");
@@ -19,6 +18,11 @@ pub const LogLevel = enum(u8) {
 const LEVEL_PREFIX: [8][]const u8 = .{
     "<0>", "<1>", "<2>", "<3>",
     "<4>", "<5>", "<6>", "<7>",
+};
+
+const LEVEL_NAME: [8][]const u8 = .{
+    "EMERG", "ALERT", "CRIT", "ERR",
+    "WARN", "NOTICE", "INFO", "DEBUG",
 };
 
 pub const DEBUG_MODE: bool = @import("build_options").debug;
@@ -95,6 +99,13 @@ fn formatArg(buf: []u8, spec: u8, args: anytype, fields: anytype, arg_idx: usize
                 'd', 'i' => return formatIntMaybe(buf, arg, 10, true),
                 'u' => return formatIntMaybe(buf, arg, 10, false),
                 'x', 'X' => return formatIntMaybe(buf, arg, 16, false),
+                'p' => {
+                    if (buf.len > 1) {
+                        buf[0] = '0';
+                        buf[1] = 'x';
+                    }
+                    return 2 + formatIntMaybe(buf[2..], arg, 16, false);
+                },
                 '%' => {
                     if (buf.len > 0) buf[0] = '%';
                     return 1;
@@ -110,8 +121,13 @@ fn formatArg(buf: []u8, spec: u8, args: anytype, fields: anytype, arg_idx: usize
 }
 
 fn formatIntMaybe(buf: []u8, value: anytype, base: u8, signed: bool) usize {
-    if (@TypeOf(value) == []const u8) return 0;
-    return formatInt(buf, value, base, signed);
+    const T = @TypeOf(value);
+    if (T == []const u8) return 0;
+    const type_info = @typeInfo(T);
+    if (type_info == .int or type_info == .comptime_int) {
+        return formatInt(buf, value, base, signed);
+    }
+    return 0;
 }
 
 fn formatInt(buf: []u8, value: anytype, base: u8, signed: bool) usize {

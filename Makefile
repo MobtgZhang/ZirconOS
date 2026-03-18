@@ -1,6 +1,6 @@
-.PHONY: all kernel iso uefi esp \
-	run run-bios run-aarch64 \
-	run-uefi-x86_64 run-uefi-aarch64 \
+.PHONY: all kernel kernel-release iso uefi uefi-release esp \
+	run run-bios run-bios-debug run-bios-release run-aarch64 \
+	run-uefi-x86_64 run-uefi-debug run-uefi-release run-uefi-aarch64 \
 	clean distclean check-tools check-uefi-tools help
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ AAVMF_VARS ?= /usr/share/AAVMF/AAVMF_VARS.fd
 
 # ── Build options ──────────────────────────────────────────────────
 DEBUG      ?= true
-ENABLE_IDT ?= false
+ENABLE_IDT ?= true
 EFI_BOOT_NAME ?= BOOTX64.EFI
 
 # ── Default ─────────────────────────────────────────────────────────
@@ -52,19 +52,24 @@ all: iso
 
 # ── Help ────────────────────────────────────────────────────────────
 help:
-	@echo "ZirconOS v$(VERSION) Build System"
+	@echo "ZirconOS v$(VERSION) Build System (Phase 0-11)"
 	@echo ""
 	@echo "Kernel & ISO:"
-	@echo "  make kernel            - Build kernel ELF (ARCH=$(ARCH))"
+	@echo "  make kernel            - Build kernel ELF (debug, ARCH=$(ARCH))"
+	@echo "  make kernel-release    - Build kernel ELF (release, ARCH=$(ARCH))"
 	@echo "  make iso               - Build bootable ISO (x86_64, GRUB/BIOS)"
 	@echo ""
 	@echo "BIOS boot:"
-	@echo "  make run-bios          - Run ISO in QEMU (x86_64 BIOS)"
+	@echo "  make run-bios          - Run ISO in QEMU (x86_64 BIOS, debug)"
+	@echo "  make run-bios-debug    - Run ISO in QEMU (BIOS + GDB debug server)"
+	@echo "  make run-bios-release  - Run ISO in QEMU (x86_64 BIOS, release)"
 	@echo "  make run-aarch64       - Run kernel in QEMU (aarch64 virt)"
 	@echo ""
 	@echo "UEFI boot:"
-	@echo "  make run-uefi-x86_64   - Run UEFI app in QEMU+OVMF (x86_64)"
-	@echo "  make run-uefi-aarch64  - Run UEFI app in QEMU+AAVMF (aarch64)"
+	@echo "  make run-uefi-x86_64   - Run UEFI app in QEMU+OVMF (debug)"
+	@echo "  make run-uefi-debug    - Run UEFI app in QEMU+OVMF (debug + GDB)"
+	@echo "  make run-uefi-release  - Run UEFI app in QEMU+OVMF (release)"
+	@echo "  make run-uefi-aarch64  - Run UEFI app in QEMU+AAVMF"
 	@echo "  make uefi ARCH=x86_64  - Build UEFI .efi only"
 	@echo "  make esp  ARCH=x86_64  - Build ESP FAT image"
 	@echo ""
@@ -73,12 +78,28 @@ help:
 	@echo "  make check-tools       - Check required tools (kernel/ISO)"
 	@echo "  make check-uefi-tools  - Check required tools (UEFI)"
 	@echo ""
-	@echo "Architectures: x86_64, aarch64, loong64, riscv64, mips64el"
-	@echo "  make kernel ARCH=aarch64"
-	@echo ""
 	@echo "Options:"
 	@echo "  DEBUG=true/false        - Enable debug logging (default: true)"
-	@echo "  ENABLE_IDT=true/false   - Enable IDT/syscall x86_64 (default: false)"
+	@echo "  ENABLE_IDT=true/false   - Enable IDT/syscall x86_64 (default: true)"
+	@echo "  ARCH=x86_64|aarch64|loong64|riscv64|mips64el"
+	@echo ""
+	@echo "Modules (Phase 0-11):"
+	@echo "  ke(sched/timer/intr/sync) mm(frame/vm/heap)"
+	@echo "  ob(object/handle/namespace) ps(process/server/smss)"
+	@echo "  se(token/access) io(device/driver/irp) lpc(ipc/port)"
+	@echo "  fs(vfs/fat32/ntfs) loader(pe32/pe32+/elf)"
+	@echo "  win32(ntdll/kernel32/console/cmd/powershell)"
+	@echo "  csrss(subsystem/window_station) exec(win32_app_engine)"
+	@echo "  user32(window/message/input) gdi32(dc/draw/font/bitmap)"
+	@echo "  wow64(thunk/pe32/32bit_compat)"
+	@echo ""
+	@echo "Boot modes:"
+	@echo "  BIOS: Normal, Debug, Serial Debug, Safe Mode"
+	@echo "  UEFI: Normal, Debug (GDB), Release"
+	@echo "  Win32: Full Demo, CMD Only, PowerShell Only"
+	@echo "  GUI: user32/gdi32 Demo"
+	@echo "  WOW64: 32-bit Compatibility Demo"
+	@echo "  Recovery: Recovery Console, Last Known Good"
 
 # ── Tool checks ────────────────────────────────────────────────────
 check-tools:
@@ -109,6 +130,17 @@ kernel: check-tools
 		--cache-dir "$(KERNEL_CACHE)" \
 		--prefix "$(KERNEL_PREFIX)"
 
+kernel-release: check-tools
+	@echo "[kernel-release] building... (arch=$(ARCH), debug=false, idt=$(ENABLE_IDT))"
+	@mkdir -p "$(KERNEL_PREFIX)" "$(KERNEL_CACHE)"
+	@cd "$(ROOT_DIR)" && zig build \
+		-Doptimize=ReleaseSafe \
+		-Darch="$(ARCH)" \
+		-Ddebug=false \
+		-Denable_idt=$(ENABLE_IDT) \
+		--cache-dir "$(KERNEL_CACHE)" \
+		--prefix "$(KERNEL_PREFIX)"
+
 # ═══════════════════════════════════════════════════════════════════
 #  GRUB ISO (x86_64 BIOS)
 # ═══════════════════════════════════════════════════════════════════
@@ -132,11 +164,23 @@ iso: check-tools $(STAGED_KERNEL) $(STAGED_GRUB_CFG)
 #  UEFI application build
 # ═══════════════════════════════════════════════════════════════════
 uefi: check-uefi-tools
-	@echo "[uefi] building UEFI app (arch=$(ARCH))..."
+	@echo "[uefi] building UEFI app (arch=$(ARCH), debug=$(DEBUG))..."
 	@mkdir -p "$(UEFI_PREFIX)" "$(UEFI_CACHE)"
 	@cd "$(ROOT_DIR)" && zig build uefi \
 		-Doptimize=Debug \
 		-Darch="$(ARCH)" \
+		-Ddebug=$(DEBUG) \
+		--cache-dir "$(UEFI_CACHE)" \
+		--prefix "$(UEFI_PREFIX)"
+	@echo "OK: $(UEFI_EFI)"
+
+uefi-release: check-uefi-tools
+	@echo "[uefi-release] building UEFI app (arch=$(ARCH), release)..."
+	@mkdir -p "$(UEFI_PREFIX)" "$(UEFI_CACHE)"
+	@cd "$(ROOT_DIR)" && zig build uefi \
+		-Doptimize=ReleaseSafe \
+		-Darch="$(ARCH)" \
+		-Ddebug=false \
 		--cache-dir "$(UEFI_CACHE)" \
 		--prefix "$(UEFI_PREFIX)"
 	@echo "OK: $(UEFI_EFI)"
@@ -160,7 +204,30 @@ esp: uefi
 run: run-bios
 
 run-bios: iso
-	@echo "[run-bios] starting QEMU (x86_64 BIOS)..."
+	@echo "[run-bios] starting QEMU (x86_64 BIOS, debug=$(DEBUG))..."
+	@$(QEMU) \
+		-m $(QEMU_MEM) \
+		-cdrom "$(ISO)" \
+		-serial stdio \
+		-display gtk \
+		-no-reboot \
+		-no-shutdown
+
+run-bios-debug: iso
+	@echo "[run-bios-debug] starting QEMU (x86_64 BIOS, debug mode + GDB)..."
+	@$(QEMU) \
+		-m $(QEMU_MEM) \
+		-cdrom "$(ISO)" \
+		-serial stdio \
+		-display gtk \
+		-no-reboot \
+		-no-shutdown \
+		-S -s \
+		-d int,cpu_reset
+
+run-bios-release: DEBUG=false
+run-bios-release: iso
+	@echo "[run-bios-release] starting QEMU (x86_64 BIOS, release)..."
 	@$(QEMU) \
 		-m $(QEMU_MEM) \
 		-cdrom "$(ISO)" \
@@ -186,7 +253,42 @@ run-aarch64: kernel
 run-uefi-x86_64: ARCH = x86_64
 run-uefi-x86_64: EFI_BOOT_NAME = BOOTX64.EFI
 run-uefi-x86_64: esp
-	@echo "[run-uefi-x86_64] starting QEMU with OVMF..."
+	@echo "[run-uefi-x86_64] starting QEMU with OVMF (debug=$(DEBUG))..."
+	@cp -f "$(OVMF_VARS)" "$(TMP_DIR)/OVMF_VARS.fd"
+	@$(QEMU) \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=pflash,format=raw,file="$(TMP_DIR)/OVMF_VARS.fd" \
+		-drive format=raw,file="$(ESP_IMG)" \
+		-m $(QEMU_MEM) \
+		-serial stdio \
+		-display gtk \
+		-net none \
+		-no-reboot \
+		-no-shutdown
+
+run-uefi-debug: ARCH = x86_64
+run-uefi-debug: EFI_BOOT_NAME = BOOTX64.EFI
+run-uefi-debug: esp
+	@echo "[run-uefi-debug] starting QEMU with OVMF (debug + GDB)..."
+	@cp -f "$(OVMF_VARS)" "$(TMP_DIR)/OVMF_VARS.fd"
+	@$(QEMU) \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=pflash,format=raw,file="$(TMP_DIR)/OVMF_VARS.fd" \
+		-drive format=raw,file="$(ESP_IMG)" \
+		-m $(QEMU_MEM) \
+		-serial stdio \
+		-display gtk \
+		-net none \
+		-no-reboot \
+		-no-shutdown \
+		-S -s \
+		-d int,cpu_reset
+
+run-uefi-release: ARCH = x86_64
+run-uefi-release: DEBUG = false
+run-uefi-release: EFI_BOOT_NAME = BOOTX64.EFI
+run-uefi-release: esp
+	@echo "[run-uefi-release] starting QEMU with OVMF (release)..."
 	@cp -f "$(OVMF_VARS)" "$(TMP_DIR)/OVMF_VARS.fd"
 	@$(QEMU) \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \

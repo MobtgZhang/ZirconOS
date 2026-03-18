@@ -47,3 +47,21 @@ pub fn enableInterrupts() void {
 pub fn disableInterrupts() void {
     impl.disableInterrupts();
 }
+
+pub fn initSerial() void {
+    if (@hasDecl(impl, "initSerial")) {
+        impl.initSerial();
+    }
+}
+
+pub fn serialWrite(s: []const u8) void {
+    if (@hasDecl(impl, "serialWrite")) {
+        impl.serialWrite(s);
+    }
+}
+
+pub fn initGdt(kernel_stack: u64) void {
+    if (@hasDecl(impl, "initGdt")) {
+        impl.initGdt(kernel_stack);
+    }
+}

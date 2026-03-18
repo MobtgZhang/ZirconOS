@@ -1,10 +1,5 @@
 //! Process Server - NT style system service
 //! Handles process/thread creation and termination via IPC
-//!
-//! Opcodes:
-//!   1 = create_process
-//!   2 = create_thread
-//!   3 = terminate_process
 
 const process = @import("process.zig");
 const ipc = @import("../lpc/ipc.zig");
@@ -16,20 +11,27 @@ pub const PROCESS_SERVER_PID: u32 = 1;
 pub const OP_CREATE_PROCESS: u32 = 1;
 pub const OP_CREATE_THREAD: u32 = 2;
 pub const OP_TERMINATE_PROCESS: u32 = 3;
+pub const OP_QUERY_PROCESS: u32 = 4;
+pub const OP_SUSPEND_PROCESS: u32 = 5;
+pub const OP_RESUME_PROCESS: u32 = 6;
 
 var frame_alloc: ?*FrameAllocator = null;
+var server_initialized: bool = false;
 
 pub fn init(alloc: *FrameAllocator) void {
     frame_alloc = alloc;
     process.init();
-    const p = process.createProcess(alloc);
+
+    const p = process.createSystemProcess(alloc, "System");
     if (p) |proc| {
-        proc.is_process_server = true;
+        proc.is_system = true;
         process.setCurrentProcess(proc.pid);
         klog.info("Process Server (PID %u) started", .{proc.pid});
     } else {
         klog.err("Failed to create Process Server", .{});
     }
+
+    server_initialized = true;
 }
 
 pub fn handleMessage() void {
@@ -46,28 +48,70 @@ pub fn handleMessage() void {
             if (frame_alloc) |alloc| {
                 const p = process.createProcess(alloc);
                 if (p) |proc| {
-                    reply_data[0] = @intCast(proc.pid & 0xFF);
-                    reply_data[1] = @intCast((proc.pid >> 8) & 0xFF);
-                    reply_data[2] = @intCast((proc.pid >> 16) & 0xFF);
-                    reply_data[3] = @intCast((proc.pid >> 24) & 0xFF);
+                    proc.parent_pid = sender;
+                    writeU32(&reply_data, proc.pid);
+                    klog.debug("PsServer: process created (pid=%u, parent=%u)", .{
+                        proc.pid, sender,
+                    });
                 }
             }
         },
-        OP_CREATE_THREAD => {},
+        OP_CREATE_THREAD => {
+            const tid = process.allocTid() orelse 0;
+            writeU32(&reply_data, tid);
+        },
         OP_TERMINATE_PROCESS => {
-            const pid = @as(u32, msg.data[0]) |
-                (@as(u32, msg.data[1]) << 8) |
-                (@as(u32, msg.data[2]) << 16) |
-                (@as(u32, msg.data[3]) << 24);
+            const pid = readU32(&msg.data);
+            const exit_code = readU32(msg.data[4..]);
+            _ = process.terminateProcess(pid, exit_code);
+        },
+        OP_QUERY_PROCESS => {
+            const pid = readU32(&msg.data);
             const p = process.findProcess(pid);
             if (p) |proc| {
-                proc.state = .terminated;
+                writeU32(&reply_data, proc.pid);
+                reply_data[4] = @intFromEnum(proc.state);
+                reply_data[5] = if (proc.is_system) 1 else 0;
+            }
+        },
+        OP_SUSPEND_PROCESS => {
+            const pid = readU32(&msg.data);
+            const p = process.findProcess(pid);
+            if (p) |proc| {
+                proc.state = .suspended;
+            }
+        },
+        OP_RESUME_PROCESS => {
+            const pid = readU32(&msg.data);
+            const p = process.findProcess(pid);
+            if (p) |proc| {
+                if (proc.state == .suspended) proc.state = .active;
             }
         },
         else => {
-            klog.warn("Process Server: unknown opcode %u from sender %u", .{ opcode, sender });
+            klog.warn("PsServer: unknown opcode %u from sender %u", .{ opcode, sender });
         },
     }
 
     _ = ipc.send(PROCESS_SERVER_PID, sender, opcode, &reply_data);
+}
+
+fn writeU32(buf: []u8, value: u32) void {
+    if (buf.len < 4) return;
+    buf[0] = @intCast(value & 0xFF);
+    buf[1] = @intCast((value >> 8) & 0xFF);
+    buf[2] = @intCast((value >> 16) & 0xFF);
+    buf[3] = @intCast((value >> 24) & 0xFF);
+}
+
+fn readU32(buf: []const u8) u32 {
+    if (buf.len < 4) return 0;
+    return @as(u32, buf[0]) |
+        (@as(u32, buf[1]) << 8) |
+        (@as(u32, buf[2]) << 16) |
+        (@as(u32, buf[3]) << 24);
+}
+
+pub fn isInitialized() bool {
+    return server_initialized;
 }

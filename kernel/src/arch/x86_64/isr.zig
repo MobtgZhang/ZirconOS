@@ -16,7 +16,9 @@ pub fn getDefaultAddr() usize {
     return isr_default_entry;
 }
 
-export fn isr_common_handler(vector: u8, error_code: u64) void {
+const InterruptFrame = @import("../../ke/interrupt.zig").InterruptFrame;
+
+export fn isr_common_handler(frame: *InterruptFrame) callconv(.c) void {
     const interrupt = @import("../../ke/interrupt.zig");
-    interrupt.handle(vector, error_code);
+    interrupt.handle(frame);
 }

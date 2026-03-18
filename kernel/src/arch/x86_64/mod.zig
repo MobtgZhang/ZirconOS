@@ -3,6 +3,8 @@ pub const paging = @import("paging.zig");
 const vga = @import("../../hal/x86_64/vga.zig");
 const pic = @import("../../hal/x86_64/pic.zig");
 const pit = @import("../../hal/x86_64/pit.zig");
+pub const serial = @import("../../hal/x86_64/serial.zig");
+pub const gdt = @import("../../hal/x86_64/gdt.zig");
 
 pub const name: []const u8 = "x86_64";
 pub const PAGE_SIZE: usize = 4096;
@@ -17,10 +19,25 @@ comptime {
 
 pub fn consoleWrite(s: []const u8) void {
     vga.write(s);
+    if (serial.isReady()) {
+        serial.write(s);
+    }
 }
 
 pub fn consoleClear() void {
     vga.clear();
+}
+
+pub fn serialWrite(s: []const u8) void {
+    serial.write(s);
+}
+
+pub fn initSerial() void {
+    serial.init();
+}
+
+pub fn initGdt(kernel_stack: u64) void {
+    gdt.init(kernel_stack);
 }
 
 pub fn halt() noreturn {

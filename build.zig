@@ -9,8 +9,8 @@ pub fn build(b: *std.Build) void {
         "arch",
         "Target architecture (x86_64, loong64, aarch64, riscv64, mips64el)",
     ) orelse "x86_64";
-    const debug_mode = b.option(bool, "debug", "Enable debug mode (verbose klog)") orelse false;
-    const enable_idt_opt = b.option(bool, "enable_idt", "Enable IDT and syscall (x86_64 only)") orelse true;
+    const debug_mode = b.option(bool, "debug", "Enable debug mode (verbose klog, serial output)") orelse false;
+    const enable_idt_opt = b.option(bool, "enable_idt", "Enable IDT, timer and syscall (x86_64 only)") orelse true;
 
     var cpu_arch: std.Target.Cpu.Arch = .x86_64;
     if (mem.eql(u8, arch_opt, "x86_64")) {
@@ -92,10 +92,10 @@ pub fn build(b: *std.Build) void {
     const step = b.step("kernel", "Build the kernel ELF");
     step.dependOn(&kernel.step);
 
-    buildUefi(b, cpu_arch, optimize);
+    buildUefi(b, cpu_arch, optimize, debug_mode);
 }
 
-fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin.OptimizeMode) void {
+fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin.OptimizeMode, debug_mode: bool) void {
     if (cpu_arch != .x86_64 and cpu_arch != .aarch64) return;
 
     const uefi_target = b.resolveTargetQuery(.{
@@ -104,11 +104,15 @@ fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin
         .abi = .none,
     });
 
+    const uefi_opts = b.addOptions();
+    uefi_opts.addOption(bool, "debug", debug_mode);
+
     const uefi_mod = b.createModule(.{
         .root_source_file = b.path("boot/uefi/main.zig"),
         .target = uefi_target,
         .optimize = optimize,
     });
+    uefi_mod.addOptions("build_options", uefi_opts);
 
     const uefi_exe = b.addExecutable(.{
         .name = "zirconos",
