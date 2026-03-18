@@ -17,18 +17,20 @@
 
 设计文档：[`docs/README.md`](docs/README.md) | [`docs/refs.md`](docs/refs.md)
 
-## 项目结构（NT Executive 风格）
+## 项目结构
 
 ```
 ZirconOS/
-├── build.zig              # Zig 构建系统
-├── Makefile               # 便捷构建封装
+├── build.zig              # Zig 构建配置
+├── build.zig.zon          # Zig 依赖声明
+├── run.sh                 # 构建与运行脚本
+├── Makefile               # Make 便捷入口
 ├── boot/
-│   ├── grub/grub.cfg      # GRUB 引导配置 (BIOS/UEFI Debug/Release)
+│   ├── grub/grub.cfg      # GRUB 引导配置 (系统选择菜单)
 │   └── uefi/main.zig      # UEFI 启动应用
 ├── link/                  # 各架构链接脚本
-│   ├── x86_64.ld / aarch64.ld / loong64.ld / riscv64.ld / mips64el.ld
-├── kernel/src/
+│   └── x86_64.ld / aarch64.ld / loong64.ld / riscv64.ld / mips64el.ld
+├── src/                   # 内核源码
 │   ├── main.zig           # 内核入口 (Phase 0-11 启动流程)
 │   ├── arch.zig           # 架构抽象分发层
 │   ├── arch/              # 架构相关代码
@@ -40,28 +42,30 @@ ZirconOS/
 │   │   └── aarch64/       #   PL011 UART
 │   ├── ke/                # Kernel Executive - 调度, 定时, 中断, 同步
 │   ├── mm/                # Memory Manager - 物理帧分配, 虚拟内存, 堆
-│   ├── ob/                # Object Manager - 对象/句柄表/命名空间/Waitable
-│   ├── ps/                # Process Subsystem - 进程/线程/Server/SMSS
+│   ├── ob/                # Object Manager - 对象/句柄表/命名空间
+│   ├── ps/                # Process Subsystem - 进程/线程管理
 │   ├── se/                # Security - Token/SID/访问检查
 │   ├── io/                # I/O Manager - 设备/驱动/IRP
 │   ├── lpc/               # LPC - IPC 消息传递/Port
+│   ├── rtl/               # Runtime Library - 内核日志
 │   ├── fs/                # File Systems - VFS/FAT32/NTFS
-│   ├── loader/            # Loader - PE32/PE32+/ELF/Section Mapping/DLL管理
-│   ├── win32/             # Win32 子系统
-│   │   ├── ntdll.zig      #   Native API (完整 Nt* / Rtl* / Dbg* 系列)
-│   │   ├── kernel32.zig   #   Win32 Base API (进程/文件/控制台/内存/模块/同步)
-│   │   ├── user32.zig     #   Window/Message API (窗口/消息队列/输入/UI)
-│   │   ├── gdi32.zig      #   GDI API (DC/绘图/字体/位图/BitBlt)
-│   │   ├── console.zig    #   控制台运行时 (conhost 风格)
-│   │   ├── cmd.zig        #   CMD 命令提示符 (20+ 命令)
-│   │   ├── powershell.zig #   PowerShell 7.4 (20+ cmdlets)
-│   │   ├── subsystem.zig  #   Win32 子系统服务器 (csrss 风格)
-│   │   ├── exec.zig       #   Win32 应用执行引擎
-│   │   └── wow64.zig      #   WOW64 32位兼容层
-│   └── rtl/               # Runtime Library - 内核日志
-├── servers/               # 用户态系统服务（预留）
-├── subsystems/            # 子系统：Win32/POSIX/WOW64（预留）
-├── libs/                  # 用户态库：ntdll/kernel32（预留）
+│   ├── loader/            # Loader - PE32/PE32+/ELF
+│   ├── libs/              # 用户态 API 库
+│   │   ├── ntdll.zig      #   Native API (Nt*/Rtl*/Dbg*)
+│   │   └── kernel32.zig   #   Win32 Base API (进程/文件/控制台/内存/模块)
+│   ├── servers/           # 系统服务
+│   │   ├── server.zig     #   Process Server (PID 1)
+│   │   └── smss.zig       #   Session Manager (SMSS)
+│   └── subsystems/        # 子系统实现
+│       └── win32/         #   Win32 子系统
+│           ├── console.zig    控制台运行时
+│           ├── cmd.zig        CMD 命令提示符
+│           ├── powershell.zig PowerShell
+│           ├── subsystem.zig  csrss 子系统服务器
+│           ├── exec.zig       Win32 应用执行引擎
+│           ├── user32.zig     窗口/消息 API
+│           ├── gdi32.zig      图形设备接口 API
+│           └── wow64.zig      WOW64 32位兼容层
 └── docs/                  # 设计文档
 ```
 
@@ -80,35 +84,27 @@ Zig 编译器：从 [ziglang.org](https://ziglang.org/download/) 下载并加入
 ## 构建与运行
 
 ```bash
-# 构建内核 (Debug)
-make kernel
+# 使用 run.sh（推荐）
+./run.sh build              # 构建内核 (Debug)
+./run.sh build-release      # 构建内核 (Release)
+./run.sh iso                # 构建 ISO
+./run.sh run                # 构建 ISO 并在 QEMU 中运行 (BIOS)
+./run.sh run-debug          # BIOS + GDB 调试服务器
+./run.sh run-release        # BIOS Release 模式
+./run.sh run-uefi           # UEFI 模式运行 (x86_64)
+./run.sh run-uefi-aarch64   # UEFI 模式运行 (aarch64)
+./run.sh run-aarch64        # AArch64 裸机运行
+./run.sh clean              # 清理构建产物
+./run.sh help               # 查看帮助
 
-# 构建内核 (Release)
-make kernel-release
+# 使用 Make（简洁入口）
+make run                    # 等同于 ./run.sh run
+make run-debug              # 等同于 ./run.sh run-debug
+make clean                  # 等同于 ./run.sh clean
+make help                   # 查看帮助
 
-# 构建 ISO 并在 QEMU 中运行 (BIOS)
-make run-bios
-
-# BIOS Debug 模式 (带 GDB 调试服务器)
-make run-bios-debug
-
-# BIOS Release 模式
-make run-bios-release
-
-# UEFI 模式运行
-make run-uefi-x86_64
-
-# UEFI Debug 模式 (带 GDB)
-make run-uefi-debug
-
-# UEFI Release 模式
-make run-uefi-release
-
-# AArch64
-make run-aarch64
-
-# 查看帮助
-make help
+# 使用 Zig 直接构建
+zig build -Darch=x86_64 -Ddebug=true -Denable_idt=true
 ```
 
 ## v1.0 已实现 (Phase 0-11)
@@ -141,7 +137,6 @@ make help
 | ELF Loader | ✅ | ELF64 头解析, 段加载, 共享对象 |
 | ntdll | ✅ | Native API (进程/线程/文件/同步/内存/IPC/系统/注册表/调试) |
 | kernel32 | ✅ | Win32 Base API (进程/文件搜索/控制台/内存/模块/同步/环境) |
-| kernelbase | ✅ | Base API 转发器 |
 | user32 | ✅ | 窗口管理, 消息队列, 窗口类, UI 原语, 输入处理 |
 | gdi32 | ✅ | 设备上下文, 绘图原语, 字体, 位图, BitBlt |
 | Console | ✅ | 控制台运行时 |
@@ -150,115 +145,6 @@ make help
 | csrss | ✅ | Win32 子系统服务器, 窗口站, 桌面, 进程注册, GUI 分发 |
 | Exec Engine | ✅ | Win32 应用执行引擎, PE加载, DLL绑定, 生命周期管理 |
 | WOW64 | ✅ | 32位兼容层, PE32加载, syscall thunking, 32位PEB/TEB |
-| Debug/Release | ✅ | BIOS + UEFI 双模式, Debug日志/GDB/Release优化 |
-| 多架构 | 🔧 | x86_64 完整, 其他 stub |
-
-## NT 兼容层 API 覆盖
-
-### ntdll.dll (Native API)
-
-| 分类 | API |
-|------|-----|
-| 进程 | NtCreateProcess, NtTerminateProcess, NtQueryInformationProcess, NtSetInformationProcess |
-| 线程 | NtCreateThread, NtTerminateThread, NtQueryInformationThread |
-| 文件 | NtCreateFile, NtOpenFile, NtReadFile, NtWriteFile, NtClose, NtDeleteFile, NtQueryDirectoryFile |
-| 对象 | NtCreateEvent, NtSetEvent, NtResetEvent, NtCreateMutant, NtCreateSemaphore |
-| 同步 | NtWaitForSingleObject, NtWaitForMultipleObjects |
-| 内存 | NtAllocateVirtualMemory, NtFreeVirtualMemory, NtProtectVirtualMemory, NtQueryVirtualMemory |
-| Section | NtCreateSection, NtMapViewOfSection, NtUnmapViewOfSection |
-| IPC | NtCreatePort, NtConnectPort, NtRequestWaitReplyPort |
-| 系统 | NtQuerySystemInformation |
-| 注册表 | NtOpenKey, NtCreateKey, NtQueryValueKey, NtSetValueKey |
-| RTL | RtlGetVersion, RtlInitUnicodeString, RtlCopyMemory, RtlZeroMemory, RtlNtStatusToDosError |
-| 调试 | DbgPrint, DbgBreakPoint |
-
-### kernel32.dll (Win32 Base API)
-
-| 分类 | API |
-|------|-----|
-| 进程 | CreateProcessA, ExitProcess, TerminateProcess, GetCurrentProcessId, WaitForSingleObject |
-| 文件 | CreateFileA, ReadFile, WriteFile, CloseHandle, DeleteFileA, GetFileSize, GetFileAttributesA |
-| 文件搜索 | FindFirstFileA, FindNextFileA, FindClose |
-| 目录 | CreateDirectoryA, RemoveDirectoryA, GetCurrentDirectoryA, SetCurrentDirectoryA |
-| 控制台 | GetStdHandle, WriteConsoleA, ReadConsoleA, AllocConsole, FreeConsole, SetConsoleTitleA |
-| 内存 | VirtualAlloc, VirtualFree, HeapAlloc, HeapFree, LocalAlloc, GlobalAlloc |
-| 模块 | LoadLibraryA, GetProcAddress, FreeLibrary, GetModuleHandleA, GetModuleFileNameA |
-| 同步 | CreateEventA, CreateMutexA, CreateSemaphoreA, CriticalSection 系列, Sleep |
-| 系统 | GetSystemInfo, GetVersionExA, GetTickCount, GetComputerNameA, GetUserNameA |
-| 环境 | GetEnvironmentVariableA, SetEnvironmentVariableA, GetTempPathA, ExpandEnvironmentStringsA |
-| 错误 | GetLastError, SetLastError |
-| 调试 | OutputDebugStringA |
-
-### user32.dll (Window/Message API)
-
-| 分类 | API |
-|------|-----|
-| 窗口类 | RegisterClassA, RegisterClassExA, UnregisterClassA |
-| 窗口创建 | CreateWindowExA, DestroyWindow |
-| 窗口属性 | ShowWindow, UpdateWindow, EnableWindow, IsWindow, IsWindowVisible |
-| 窗口布局 | SetWindowPos, MoveWindow, GetWindowRect, GetClientRect |
-| 窗口文本 | SetWindowTextA, GetWindowTextA, GetWindowTextLengthA |
-| 消息循环 | GetMessageA, PeekMessageA, TranslateMessage, DispatchMessageA |
-| 消息发送 | PostMessageA, SendMessageA, PostQuitMessage |
-| 焦点/激活 | SetFocus, GetFocus, SetActiveWindow, GetActiveWindow, SetForegroundWindow |
-| 绘制 | BeginPaint, EndPaint, InvalidateRect, GetDC, ReleaseDC |
-| 输入 | SetCapture, ReleaseCapture, GetCapture |
-| 定时器 | SetTimer, KillTimer |
-| 对话框 | MessageBoxA |
-| 系统 | GetSystemMetrics, GetDesktopWindow, DefWindowProcA |
-| 资源 | LoadCursorA, LoadIconA |
-
-### gdi32.dll (Graphics API)
-
-| 分类 | API |
-|------|-----|
-| DC | CreateCompatibleDC, DeleteDC, SaveDC, RestoreDC |
-| 对象 | SelectObject, DeleteObject, GetStockObject, GetObjectType |
-| 画笔/画刷 | CreatePen, CreateSolidBrush, CreateHatchBrush |
-| 字体 | CreateFontA, CreateFontIndirectA, GetTextMetricsA |
-| 颜色 | SetTextColor, SetBkColor, SetBkMode, SetTextAlign, RGB |
-| 绘图 | SetPixel, MoveToEx, LineTo, Rectangle, Ellipse, RoundRect, Polyline, Polygon |
-| 填充 | FillRect, FrameRect, InvertRect, PatBlt |
-| 文本 | TextOutA, DrawTextA, GetTextExtentPoint32A |
-| 位图 | CreateCompatibleBitmap, BitBlt, StretchBlt |
-| 区域 | CreateRectRgn, SelectClipRgn, GetClipBox |
-| 坐标 | SetViewportOrgEx, SetWindowOrgEx |
-
-### WOW64 (32-bit Compatibility)
-
-| 分类 | 组件 |
-|------|------|
-| 核心 | wow64.dll (syscall dispatch), wow64cpu.dll (context管理), wow64win.dll (Win32k thunks) |
-| 32位DLL | ntdll32.dll (Native API 32-bit shim), kernel3232.dll (Win32 Base 32-bit shim) |
-| Thunk | 18+ syscall thunks (NtCreateProcess, NtCreateFile, NtAllocateVirtualMemory 等) |
-| 转换 | 指针 32↔64, 句柄转换, 结构体转换, 地址空间映射 |
-| 上下文 | CONTEXT32 (x86 寄存器), PEB32, TEB32, 32位栈/堆管理 |
-| 地址空间 | 2GB 用户空间 (0x00000000 - 0x7FFFFFFF) |
-
-## 启动模式
-
-### BIOS (GRUB Multiboot2)
-
-| 模式 | 说明 | Make 命令 |
-|------|------|-----------|
-| Normal | 标准启动, Debug 日志 | `make run-bios` |
-| Debug | GDB 远程调试 | `make run-bios-debug` |
-| Release | 优化构建, 最小日志 | `make run-bios-release` |
-| Safe Mode | 安全模式 | GRUB 菜单选择 |
-| Serial Debug | 仅串口调试 | GRUB 菜单选择 |
-| Recovery | 恢复控制台 | GRUB 菜单选择 |
-| GUI Demo | user32/gdi32 演示 | GRUB 菜单选择 |
-| WOW64 Demo | 32位兼容演示 | GRUB 菜单选择 |
-| Full Demo | Phase 0-11 完整演示 | GRUB 菜单选择 |
-
-### UEFI (OVMF/AAVMF)
-
-| 模式 | 说明 | Make 命令 |
-|------|------|-----------|
-| Normal | 标准 UEFI 启动 | `make run-uefi-x86_64` |
-| Debug | GDB 远程调试 | `make run-uefi-debug` |
-| Release | 优化构建 | `make run-uefi-release` |
-| AArch64 | ARM64 UEFI | `make run-uefi-aarch64` |
 
 ## 里程碑
 

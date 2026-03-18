@@ -1,0 +1,15 @@
+.{
+    .name = .zirconos,
+    .fingerprint = 0xd481acc104ea43e0,
+    .version = "1.0.0",
+    .minimum_zig_version = "0.13.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "boot",
+        "link",
+        "docs",
+    },
+    .dependencies = .{},
+}
