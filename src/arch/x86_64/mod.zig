@@ -78,6 +78,40 @@ pub fn halt() noreturn {
     }
 }
 
+pub fn shutdown() noreturn {
+    asm volatile ("cli");
+    // QEMU ACPI shutdown (port 0x604)
+    asm volatile ("outw %[val], %[port]"
+        :
+        : [val] "{ax}" (@as(u16, 0x2000)),
+          [port] "{dx}" (@as(u16, 0x604)),
+    );
+    // Bochs/older QEMU shutdown (port 0xB004)
+    asm volatile ("outw %[val], %[port]"
+        :
+        : [val] "{ax}" (@as(u16, 0x2000)),
+          [port] "{dx}" (@as(u16, 0xB004)),
+    );
+    halt();
+}
+
+pub fn reset() noreturn {
+    asm volatile ("cli");
+    // Pulse reset via 8042 keyboard controller
+    asm volatile ("outb %[val], %[port]"
+        :
+        : [val] "{al}" (@as(u8, 0xFE)),
+          [port] "{dx}" (@as(u16, 0x64)),
+    );
+    // Fallback: reset via port 0xCF9
+    asm volatile ("outb %[val], %[port]"
+        :
+        : [val] "{al}" (@as(u8, 0x06)),
+          [port] "{dx}" (@as(u16, 0xCF9)),
+    );
+    halt();
+}
+
 pub fn sendEoi(irq: u8) void {
     pic.sendEoi(irq);
 }

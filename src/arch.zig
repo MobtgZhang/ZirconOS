@@ -24,6 +24,14 @@ pub fn halt() noreturn {
     impl.halt();
 }
 
+pub fn shutdown() noreturn {
+    impl.shutdown();
+}
+
+pub fn reset() noreturn {
+    impl.reset();
+}
+
 pub fn sendEoi(irq: u8) void {
     impl.sendEoi(irq);
 }
@@ -88,5 +96,16 @@ pub fn readInputChar() ?u8 {
 pub fn initFramebuffer(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
     if (@hasDecl(impl, "initFramebuffer")) {
         impl.initFramebuffer(addr, width, height, pitch, bpp);
+    }
+}
+
+pub fn waitForInterrupt() void {
+    switch (@import("builtin").target.cpu.arch) {
+        .x86_64 => asm volatile ("hlt"),
+        .aarch64 => asm volatile ("wfi"),
+        .riscv64 => asm volatile ("wfi"),
+        .mips64el => asm volatile ("wait"),
+        .loongarch64 => asm volatile ("idle 0"),
+        else => {},
     }
 }

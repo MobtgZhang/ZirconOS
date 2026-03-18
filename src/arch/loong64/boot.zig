@@ -1,7 +1,13 @@
-//! LoongArch64 boot info stub
-//! Real implementation will parse firmware-provided memory map
+//! LoongArch64 boot info
+//! Provides defaults for QEMU virt machine (RAM at 0x00000000, 256MB)
 
 pub const MULTIBOOT2_BOOTLOADER_MAGIC: u32 = 0;
+
+pub const BootMode = enum {
+    normal,
+    cmd,
+    powershell,
+};
 
 pub const MmapEntryType = enum(u32) {
     available = 1,
@@ -19,20 +25,39 @@ pub const MmapEntry = struct {
     reserved: u32,
 };
 
+pub const FramebufferInfo = struct {
+    addr: u64,
+    pitch: u32,
+    width: u32,
+    height: u32,
+    bpp: u8,
+    fb_type: u8,
+};
+
 pub const BootInfo = struct {
     mem_lower_kb: u32 = 0,
-    mem_upper_kb: u32 = 0,
+    mem_upper_kb: u32 = 262144,
     mmap_ptr: [*]const u8 = @as([*]const u8, @ptrFromInt(0x1000)),
-    mmap_entry_count: usize = 0,
-    mmap_entry_size: u32 = 0,
+    mmap_entry_count: usize = 1,
+    mmap_entry_size: u32 = @sizeOf(MmapEntry),
+    boot_mode: BootMode = .normal,
+    fb_info: ?FramebufferInfo = null,
 
-    pub fn getMmapEntry(self: BootInfo, i: usize) ?MmapEntry {
-        _ = self;
-        _ = i;
+    pub fn getMmapEntry(_: BootInfo, i: usize) ?MmapEntry {
+        if (i < static_mmap.len) return static_mmap[i];
         return null;
     }
 };
 
+const static_mmap = [_]MmapEntry{
+    .{
+        .base_addr = 0x00200000,
+        .length = 256 * 1024 * 1024 - 0x200000,
+        .type = @intFromEnum(MmapEntryType.available),
+        .reserved = 0,
+    },
+};
+
 pub fn parse(_: usize) ?BootInfo {
-    return null;
+    return BootInfo{};
 }

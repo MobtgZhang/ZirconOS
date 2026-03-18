@@ -153,14 +153,14 @@ fn displayBootManagerMenu(out: anytype) void {
     out.reset(false) catch {};
 
     // Set text attribute: white on blue for header
-    _ = out.setAttribute(0x1F) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x1F))) catch {};
 
     puts(out, "\r\n");
     puts(out, "                    ZirconOS Boot Manager                                     \r\n");
     puts(out, "                         Version " ++ ZBM_VERSION ++ "                                             \r\n");
 
     // Reset to normal text
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
     puts(out, "    Choose an operating system to start:\r\n");
     puts(out, "    (Use the arrow keys to highlight your choice, then press ENTER.)\r\n");
@@ -169,17 +169,17 @@ fn displayBootManagerMenu(out: anytype) void {
     // Display entries
     for (0..entry_count) |i| {
         if (i == selected) {
-            _ = out.setAttribute(0x70) catch {}; // Highlighted
+            _ = out.setAttribute(@bitCast(@as(u8, 0x70))) catch {}; // Highlighted
             puts(out, "  > ");
         } else {
-            _ = out.setAttribute(0x07) catch {}; // Normal
+            _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {}; // Normal
             puts(out, "    ");
         }
-        puts(out, entries[i].description);
+        putsRuntime(out, entries[i].description);
         puts(out, "\r\n");
     }
 
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
     puts(out, "    ");
     for (0..72) |_| puts(out, "-");
@@ -187,27 +187,27 @@ fn displayBootManagerMenu(out: anytype) void {
 
     // Timer
     if (timer_active and countdown > 0) {
-        _ = out.setAttribute(0x0E) catch {}; // Yellow
+        _ = out.setAttribute(@bitCast(@as(u8, 0x0E))) catch {}; // Yellow
         puts(out, "    Seconds until the highlighted choice will be started automatically: ");
         printDecimal(out, countdown);
         puts(out, "\r\n");
     }
 
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
 
     // Description of selected entry
-    _ = out.setAttribute(0x0B) catch {}; // Light cyan
+    _ = out.setAttribute(@bitCast(@as(u8, 0x0B))) catch {}; // Light cyan
     puts(out, "    ");
     displayEntryDescription(out, selected);
     puts(out, "\r\n");
 
     // Footer
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
-    _ = out.setAttribute(0x17) catch {}; // White on blue
+    _ = out.setAttribute(@bitCast(@as(u8, 0x17))) catch {}; // White on blue
     puts(out, "  ENTER=Choose | ESC=Advanced Options | F1=Help                                \r\n");
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
 
     // System info
     puts(out, "\r\n");
@@ -242,10 +242,10 @@ fn updateTimerDisplay(out: anytype) void {
 
 fn displayAdvancedOptions(out: anytype) void {
     out.reset(false) catch {};
-    _ = out.setAttribute(0x1F) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x1F))) catch {};
     puts(out, "\r\n");
     puts(out, "                ZirconOS Advanced Boot Options                                 \r\n");
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
     puts(out, "    Boot Information:\r\n");
     puts(out, "      Architecture : " ++ arch_name ++ "\r\n");
@@ -268,7 +268,7 @@ fn displayAdvancedOptions(out: anytype) void {
     printDecimal(out, @intCast(entry_count));
     puts(out, "\r\n");
     puts(out, "      Default      : ");
-    puts(out, entries[0].description);
+    putsRuntime(out, entries[0].description);
     puts(out, "\r\n");
     puts(out, "      Timeout      : ");
     printDecimal(out, DEFAULT_TIMEOUT);
@@ -302,9 +302,9 @@ fn displayAdvancedOptions(out: anytype) void {
     puts(out, "      5: IPC + Services     11: WOW64 (32-bit)\r\n");
     puts(out, "\r\n");
 
-    _ = out.setAttribute(0x17) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x17))) catch {};
     puts(out, "  Press any key to return to boot menu...                                     \r\n");
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
 
     // Wait for keypress
     if (uefi.system_table.con_in) |cin| {
@@ -318,16 +318,16 @@ fn displayAdvancedOptions(out: anytype) void {
 // ── Boot Progress Display ──
 
 fn displayBootProgress(out: anytype) void {
-    _ = out.setAttribute(0x1F) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x1F))) catch {};
     puts(out, "\r\n");
     puts(out, "                    ZirconOS Boot Manager                                     \r\n");
-    _ = out.setAttribute(0x07) catch {};
+    _ = out.setAttribute(@bitCast(@as(u8, 0x07))) catch {};
     puts(out, "\r\n");
     puts(out, "    Booting: ");
-    puts(out, entries[selected].description);
+    putsRuntime(out, entries[selected].description);
     puts(out, "\r\n\r\n");
     puts(out, "    Command line: ");
-    puts(out, entries[selected].cmdline);
+    putsRuntime(out, entries[selected].cmdline);
     puts(out, "\r\n\r\n");
 
     puts(out, "    [*] UEFI Console initialized\r\n");
@@ -365,13 +365,10 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
 
 // ── UEFI Helper Functions ──
 
-fn readKey(cin: anytype) ?uefi.protocols.InputKey {
-    var key: uefi.protocols.InputKey = undefined;
-    if (cin.readKeyStroke(&key)) |_| {
-        return key;
-    } else |_| {
-        return null;
-    }
+const InputKey = uefi.protocol.SimpleTextInputEx.Key.Input;
+
+fn readKey(cin: anytype) ?InputKey {
+    return cin.readKeyStroke() catch return null;
 }
 
 fn waitForKey(cin: anytype) void {
@@ -385,7 +382,7 @@ fn waitOneSecond(bs: *uefi.tables.BootServices) void {
     // Simple busy loop fallback
     var i: u64 = 0;
     while (i < 100_000_000) : (i += 1) {
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 }
 
@@ -419,6 +416,13 @@ fn printDecimal(out: anytype, value: u32) void {
 
 fn puts(out: anytype, comptime s: []const u8) void {
     _ = out.outputString(unicode.utf8ToUtf16LeStringLiteral(s)) catch false;
+}
+
+fn putsRuntime(out: anytype, s: []const u8) void {
+    for (s) |c| {
+        var buf: [1:0]u16 = .{@as(u16, c)};
+        _ = out.outputString(&buf) catch false;
+    }
 }
 
 fn halt() noreturn {

@@ -1,6 +1,16 @@
 const builtin = @import("builtin");
 const arch = @import("arch.zig");
 const klog = @import("rtl/klog.zig");
+const std = @import("std");
+
+pub const panic = std.debug.FullPanic(panicImpl);
+
+fn panicImpl(msg: []const u8, _: ?usize) noreturn {
+    arch.consoleWrite("KERNEL PANIC: ");
+    arch.consoleWrite(msg);
+    arch.consoleWrite("\n");
+    arch.halt();
+}
 
 extern const stack_top: u8;
 
@@ -17,8 +27,7 @@ comptime {
 pub export fn kernel_main(magic: u32, info_addr: usize) callconv(.c) noreturn {
     switch (builtin.target.cpu.arch) {
         .x86_64 => startX86_64(magic, info_addr),
-        .aarch64 => startAarch64(),
-        else => startStub(),
+        else => startGeneric(),
     }
 }
 
@@ -415,22 +424,128 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     cmd_mod.runInteractiveShell();
 }
 
-fn startAarch64() noreturn {
-    const uart = @import("hal/aarch64/uart.zig");
-    uart.init();
-    uart.write("========================================\n");
-    uart.write("  ZirconOS v1.0 (aarch64) booting...\n");
-    uart.write("  NT-style Hybrid Microkernel\n");
-    uart.write("========================================\n");
-    uart.write("\n");
-    uart.write("Kernel modules (Phase 0-11):\n");
-    uart.write("  ke mm ob ps se io lpc fs ldr win32 csrss exec\n");
-    uart.write("  user32 gdi32 wow64\n");
-    uart.write("\n");
-    uart.write("System halted.\n");
-    arch.halt();
-}
+fn startGeneric() noreturn {
+    const boot = arch.impl.boot;
+    const frame = @import("mm/frame.zig");
+    const heap = @import("mm/heap.zig");
+    const server = @import("servers/server.zig");
+    const smss = @import("servers/smss.zig");
+    const ob = @import("ob/object.zig");
+    const se = @import("se/token.zig");
+    const io = @import("io/io.zig");
+    const scheduler = @import("ke/scheduler.zig");
+    const timer = @import("ke/timer.zig");
+    const port = @import("lpc/port.zig");
+    const vfs_mod = @import("fs/vfs.zig");
+    const fat32_mod = @import("fs/fat32.zig");
+    const ntfs_mod = @import("fs/ntfs.zig");
+    const pe_loader = @import("loader/pe.zig");
+    const elf_loader = @import("loader/elf.zig");
+    const ntdll = @import("libs/ntdll.zig");
+    const kernel32 = @import("libs/kernel32.zig");
+    const console_mod = @import("subsystems/win32/console.zig");
+    const cmd_mod = @import("subsystems/win32/cmd.zig");
+    const ps_mod = @import("subsystems/win32/powershell.zig");
+    const subsys = @import("subsystems/win32/subsystem.zig");
+    const exec = @import("subsystems/win32/exec.zig");
+    const user32_mod = @import("subsystems/win32/user32.zig");
+    const gdi32_mod = @import("subsystems/win32/gdi32.zig");
+    const wow64_mod = @import("subsystems/win32/wow64.zig");
 
-fn startStub() noreturn {
-    arch.halt();
+    arch.initSerial();
+
+    klog.info("========================================", .{});
+    klog.info("  ZirconOS v1.0 (NT-style Hybrid Microkernel)", .{});
+    klog.info("  Architecture: %s", .{arch.impl.name});
+    klog.info("========================================", .{});
+
+    if (klog.DEBUG_MODE) {
+        klog.info("Build: DEBUG mode (verbose logging enabled)", .{});
+    } else {
+        klog.info("Build: RELEASE mode (optimized)", .{});
+    }
+
+    klog.info("--- Phase 1: Boot + Early Kernel ---", .{});
+
+    const boot_info = boot.parse(0);
+    if (boot_info) |info| {
+        klog.info("Memory: upper=%u KB, mmap_entries=%u", .{
+            info.mem_upper_kb, info.mmap_entry_count,
+        });
+    }
+
+    var alloc: frame.FrameAllocator = undefined;
+    alloc.init(boot_info, 0x400000, 0);
+    klog.info("Frame allocator: total_frames=%u, frame_size=%u", .{
+        alloc.total_frames, frame.FRAME_SIZE,
+    });
+
+    heap.init();
+    klog.info("Kernel heap: %u bytes available", .{heap.freeBytes()});
+
+    klog.info("--- Phase 2: Scheduler + Timer ---", .{});
+    scheduler.init();
+    timer.init();
+
+    klog.info("--- Phase 4: Object / Handle / Process Core ---", .{});
+    ob.init();
+    ob.initNamespace();
+    se.init();
+    io.init();
+
+    klog.info("--- Phase 5: IPC + System Services ---", .{});
+    server.init(&alloc);
+    _ = port.createPort(1, "\\LPC\\PsServer");
+    _ = port.createPort(1, "\\LPC\\ObServer");
+    _ = port.createPort(1, "\\LPC\\IoServer");
+    smss.init(&alloc);
+
+    klog.info("--- Phase 6: I/O + File + Driver ---", .{});
+    vfs_mod.init();
+    fat32_mod.init();
+    ntfs_mod.init();
+
+    klog.info("--- Phase 7: Loader ---", .{});
+    elf_loader.init();
+    pe_loader.init();
+
+    klog.info("--- Phase 8: Native Userland ---", .{});
+    ntdll.init();
+    kernel32.init();
+    console_mod.init();
+    cmd_mod.init();
+    ps_mod.init();
+
+    klog.info("--- Phase 9: Win32 Subsystem ---", .{});
+    subsys.init();
+    exec.init();
+
+    klog.info("--- Phase 10: Graphical Subsystem ---", .{});
+    user32_mod.init();
+    gdi32_mod.init();
+    subsys.initGuiSubsystem();
+
+    klog.info("--- Phase 11: WOW64 ---", .{});
+    wow64_mod.init();
+
+    klog.info("", .{});
+    klog.info("=== ZirconOS v1.0 Kernel Ready (Phase 0-11) ===", .{});
+    klog.info("Architecture : %s", .{arch.impl.name});
+    klog.info("Processes    : %u", .{@import("ps/process.zig").getProcessCount()});
+    klog.info("Sessions     : %u", .{smss.getSessionCount()});
+    klog.info("Heap         : %u/%u bytes used", .{ heap.usedBytes(), heap.totalBytes() });
+    klog.info("", .{});
+
+    cmd_mod.runBootSequence();
+    ps_mod.runBootSequence();
+    exec.runDemoApps();
+    gdi32_mod.runGdiDemo();
+    user32_mod.runGuiDemo();
+    wow64_mod.runWow64Demo();
+
+    klog.info("", .{});
+    klog.info("=== System Ready ===", .{});
+    klog.info("", .{});
+
+    cmd_mod.runInteractiveShell();
 }

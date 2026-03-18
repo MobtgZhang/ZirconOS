@@ -1285,7 +1285,7 @@ pub fn runInteractive(console_id: u32) void {
                 },
             }
         } else {
-            asm volatile ("hlt");
+            arch.waitForInterrupt();
         }
     }
 

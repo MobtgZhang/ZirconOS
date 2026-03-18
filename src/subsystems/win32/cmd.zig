@@ -180,6 +180,8 @@ pub const CmdShell = struct {
             self.cmdColor(args);
         } else if (strEqlI(cmd_name, "path")) {
             self.cmdPath(args);
+        } else if (strEqlI(cmd_name, "shutdown") or strEqlI(cmd_name, "shutdown.exe")) {
+            self.cmdShutdown(args);
         } else if (strEqlI(cmd_name, "diskpart")) {
             self.cmdDiskpart();
         } else if (cmd_name.len > 0) {
@@ -392,6 +394,7 @@ pub const CmdShell = struct {
         con.writeLine("MD        Creates a directory.");
         con.writeLine("PATH      Displays or sets a search path for executables.");
         con.writeLine("SET       Displays, sets, or removes environment variables.");
+        con.writeLine("SHUTDOWN  Shuts down, restarts, or logs off the system.");
         con.writeLine("SYSTEMINFO Displays system configuration information.");
         con.writeLine("TASKLIST  Displays all currently running processes.");
         con.writeLine("TIME      Displays the system time.");
@@ -538,6 +541,116 @@ pub const CmdShell = struct {
         }
     }
 
+    fn cmdShutdown(self: *CmdShell, args: []const u8) void {
+        const arch = @import("../../arch.zig");
+        const con = console.getConsole(self.console_id) orelse return;
+        const trimmed = trim(args);
+
+        if (trimmed.len == 0) {
+            con.writeLine("Usage: shutdown [/s | /r | /h | /l | /a] [/t xxx] [/f]");
+            con.writeLine("  /s  Shutdown the computer.");
+            con.writeLine("  /r  Restart the computer.");
+            con.writeLine("  /h  Hibernate the local computer.");
+            con.writeLine("  /l  Log off the current user.");
+            con.writeLine("  /a  Abort a system shutdown.");
+            con.writeLine("  /t  Set time-out period before shutdown (in seconds).");
+            con.writeLine("  /f  Force running applications to close.");
+            return;
+        }
+
+        var do_shutdown = false;
+        var do_restart = false;
+        var do_hibernate = false;
+        var do_logoff = false;
+        var do_abort = false;
+        var do_force = false;
+        var timeout: u32 = 0;
+
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            if (trimmed[i] == '/' or trimmed[i] == '-') {
+                i += 1;
+                if (i >= trimmed.len) break;
+                const flag = if (trimmed[i] >= 'A' and trimmed[i] <= 'Z') trimmed[i] + 32 else trimmed[i];
+                switch (flag) {
+                    's' => do_shutdown = true,
+                    'r' => do_restart = true,
+                    'h' => do_hibernate = true,
+                    'l' => do_logoff = true,
+                    'a' => do_abort = true,
+                    'f' => do_force = true,
+                    't' => {
+                        i += 1;
+                        while (i < trimmed.len and trimmed[i] == ' ') i += 1;
+                        while (i < trimmed.len and trimmed[i] >= '0' and trimmed[i] <= '9') {
+                            timeout = timeout * 10 + @as(u32, trimmed[i] - '0');
+                            i += 1;
+                        }
+                        continue;
+                    },
+                    else => {
+                        con.writeLine("Invalid argument/option - Check the usage with: shutdown /?");
+                        return;
+                    },
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        if (do_abort) {
+            con.writeLine("The scheduled shutdown has been cancelled.");
+            return;
+        }
+
+        if (do_logoff) {
+            con.writeLine("Logging off...");
+            klog.info("CMD: User initiated logoff", .{});
+            self.state = .exiting;
+            return;
+        }
+
+        if (do_hibernate) {
+            con.writeLine("Hibernating the system...");
+            klog.info("CMD: User initiated hibernate", .{});
+            con.writeLine("The system is entering hibernation mode.");
+            arch.halt();
+        }
+
+        if (do_restart) {
+            con.writeLine("");
+            var buf: [16]u8 = undefined;
+            if (timeout > 0) {
+                _ = con.writeOutput("The system will restart in ");
+                _ = con.writeOutput(formatUint(&buf, timeout));
+                con.writeLine(" seconds.");
+            }
+            con.writeLine("Restarting the system...");
+            klog.info("CMD: User initiated restart (timeout=%d, force=%s)", .{
+                timeout, if (do_force) "yes" else "no",
+            });
+            arch.reset();
+        }
+
+        if (do_shutdown) {
+            con.writeLine("");
+            var buf: [16]u8 = undefined;
+            if (timeout > 0) {
+                _ = con.writeOutput("The system will shut down in ");
+                _ = con.writeOutput(formatUint(&buf, timeout));
+                con.writeLine(" seconds.");
+            }
+            con.writeLine("Shutting down the system...");
+            klog.info("CMD: User initiated shutdown (timeout=%d, force=%s)", .{
+                timeout, if (do_force) "yes" else "no",
+            });
+            arch.shutdown();
+        }
+
+        con.writeLine("No valid shutdown action specified. Use: shutdown /s or shutdown /r");
+    }
+
     fn cmdDiskpart(self: *CmdShell) void {
         diskpart.runInteractive(self.console_id);
     }
@@ -644,7 +757,7 @@ pub fn runInteractiveShell() noreturn {
                 },
             }
         } else {
-            asm volatile ("hlt");
+            arch.waitForInterrupt();
         }
     }
     arch.halt();

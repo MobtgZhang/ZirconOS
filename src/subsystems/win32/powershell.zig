@@ -239,6 +239,12 @@ pub const PowerShell = struct {
             self.cmdRemoveItem(args);
         } else if (strEqlI(cmd_name, "Test-Path")) {
             self.cmdTestPath(args);
+        } else if (strEqlI(cmd_name, "Stop-Computer")) {
+            self.cmdStopComputer(args);
+        } else if (strEqlI(cmd_name, "Restart-Computer")) {
+            self.cmdRestartComputer(args);
+        } else if (strEqlI(cmd_name, "shutdown") or strEqlI(cmd_name, "shutdown.exe")) {
+            self.cmdShutdownExe(args);
         } else if (strEqlI(cmd_name, "diskpart") or strEqlI(cmd_name, "diskpart.exe")) {
             self.cmdDiskpart();
         } else if (strEqlI(cmd_name, "Get-Disk")) {
@@ -380,6 +386,9 @@ pub const PowerShell = struct {
         con.writeLine("  Get-Disk         - Gets physical disk objects");
         con.writeLine("  Get-Partition    - Gets partition objects");
         con.writeLine("  Get-Volume       - Gets volume objects");
+        con.writeLine("  Stop-Computer    - Shuts down the computer");
+        con.writeLine("  Restart-Computer - Restarts the computer");
+        con.writeLine("  shutdown         - Shuts down, restarts, or logs off (/s /r /h /l /a)");
         con.writeLine("  diskpart         - Opens the DiskPart utility");
         con.writeLine("  Exit             - Exits the shell");
         con.writeLine("");
@@ -436,10 +445,12 @@ pub const PowerShell = struct {
         con.writeLine("Cmdlet          Get-Service                   7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Get-Variable                  7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Get-Volume                    7.4.0      ZirconOS.Storage");
+        con.writeLine("Cmdlet          Restart-Computer              7.4.0      ZirconOS.Management");
         con.writeLine("Cmdlet          New-Item                      7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Remove-Item                   7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Set-Location                  7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Set-Variable                  7.4.0      ZirconOS.Core");
+        con.writeLine("Cmdlet          Stop-Computer                 7.4.0      ZirconOS.Management");
         con.writeLine("Cmdlet          Test-Path                     7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Write-Host                    7.4.0      ZirconOS.Core");
         con.writeLine("Cmdlet          Write-Output                  7.4.0      ZirconOS.Core");
@@ -580,6 +591,143 @@ pub const PowerShell = struct {
         } else {
             con.writeLine("False");
         }
+    }
+
+    fn cmdStopComputer(self: *PowerShell, args: []const u8) void {
+        const arch = @import("../../arch.zig");
+        const con = console.getConsole(self.console_id) orelse return;
+        const trimmed = trim(args);
+
+        var do_force = false;
+        if (trimmed.len > 0) {
+            if (strEqlI(trimmed, "-Force")) {
+                do_force = true;
+            } else if (strEqlI(trimmed, "-WhatIf")) {
+                con.writeLine("What if: Performing the operation \"Stop-Computer\" on target \"localhost\".");
+                return;
+            } else if (strEqlI(trimmed, "-Confirm")) {
+                con.writeLine("Confirm");
+                con.writeLine("Are you sure you want to perform this action?");
+                con.writeLine("Performing the operation \"Stop-Computer\" on target \"localhost\".");
+                return;
+            }
+        }
+
+        con.writeLine("");
+        if (do_force) {
+            con.writeLine("WARNING: Forcing shutdown - all applications will be terminated.");
+        }
+        klog.info("PowerShell: Stop-Computer executed (force=%s)", .{
+            if (do_force) "yes" else "no",
+        });
+        con.writeLine("Shutting down the computer...");
+        arch.shutdown();
+    }
+
+    fn cmdRestartComputer(self: *PowerShell, args: []const u8) void {
+        const arch = @import("../../arch.zig");
+        const con = console.getConsole(self.console_id) orelse return;
+        const trimmed = trim(args);
+
+        var do_force = false;
+        if (trimmed.len > 0) {
+            if (strEqlI(trimmed, "-Force")) {
+                do_force = true;
+            } else if (strEqlI(trimmed, "-WhatIf")) {
+                con.writeLine("What if: Performing the operation \"Restart-Computer\" on target \"localhost\".");
+                return;
+            } else if (strEqlI(trimmed, "-Confirm")) {
+                con.writeLine("Confirm");
+                con.writeLine("Are you sure you want to perform this action?");
+                con.writeLine("Performing the operation \"Restart-Computer\" on target \"localhost\".");
+                return;
+            }
+        }
+
+        con.writeLine("");
+        if (do_force) {
+            con.writeLine("WARNING: Forcing restart - all applications will be terminated.");
+        }
+        klog.info("PowerShell: Restart-Computer executed (force=%s)", .{
+            if (do_force) "yes" else "no",
+        });
+        con.writeLine("Restarting the computer...");
+        arch.reset();
+    }
+
+    fn cmdShutdownExe(self: *PowerShell, args: []const u8) void {
+        const arch = @import("../../arch.zig");
+        const con = console.getConsole(self.console_id) orelse return;
+        const trimmed = trim(args);
+
+        if (trimmed.len == 0) {
+            con.writeLine("Usage: shutdown [/s | /r | /h | /l | /a] [/t xxx] [/f]");
+            con.writeLine("  /s  Shutdown the computer.");
+            con.writeLine("  /r  Restart the computer.");
+            con.writeLine("  /h  Hibernate the local computer.");
+            con.writeLine("  /l  Log off the current user.");
+            con.writeLine("  /a  Abort a system shutdown.");
+            con.writeLine("  /t  Set time-out period before shutdown (in seconds).");
+            con.writeLine("  /f  Force running applications to close.");
+            return;
+        }
+
+        var do_shutdown = false;
+        var do_restart = false;
+        var do_hibernate = false;
+        var do_logoff = false;
+        var do_abort = false;
+
+        var i: usize = 0;
+        while (i < trimmed.len) {
+            if (trimmed[i] == '/' or trimmed[i] == '-') {
+                i += 1;
+                if (i >= trimmed.len) break;
+                const flag = if (trimmed[i] >= 'A' and trimmed[i] <= 'Z') trimmed[i] + 32 else trimmed[i];
+                switch (flag) {
+                    's' => do_shutdown = true,
+                    'r' => do_restart = true,
+                    'h' => do_hibernate = true,
+                    'l' => do_logoff = true,
+                    'a' => do_abort = true,
+                    'f', 't' => {},
+                    else => {
+                        con.writeLine("Invalid argument/option.");
+                        return;
+                    },
+                }
+                i += 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        if (do_abort) {
+            con.writeLine("The scheduled shutdown has been cancelled.");
+            return;
+        }
+        if (do_logoff) {
+            con.writeLine("Logging off...");
+            self.state = .exiting;
+            return;
+        }
+        if (do_hibernate) {
+            con.writeLine("The system is entering hibernation mode.");
+            klog.info("PowerShell: shutdown /h - hibernate", .{});
+            arch.halt();
+        }
+        if (do_restart) {
+            con.writeLine("Restarting the system...");
+            klog.info("PowerShell: shutdown /r - restart", .{});
+            arch.reset();
+        }
+        if (do_shutdown) {
+            con.writeLine("Shutting down the system...");
+            klog.info("PowerShell: shutdown /s - shutdown", .{});
+            arch.shutdown();
+        }
+
+        con.writeLine("No valid shutdown action specified.");
     }
 
     fn cmdDiskpart(self: *PowerShell) void {
@@ -810,7 +958,7 @@ pub fn runInteractiveShell() noreturn {
                 },
             }
         } else {
-            asm volatile ("hlt");
+            arch.waitForInterrupt();
         }
     }
     arch.halt();
