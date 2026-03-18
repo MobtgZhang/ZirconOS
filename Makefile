@@ -1,106 +1,167 @@
-.PHONY: all kernel uefi iso run run-uefi run-bios clean distclean check-tools help
+.PHONY: all kernel iso uefi esp \
+	run run-bios run-aarch64 \
+	run-uefi-x86_64 run-uefi-aarch64 \
+	clean distclean check-tools check-uefi-tools help
 
-ROOT_DIR := $(abspath .)
-VERSION := 0.0.1
-ARCH ?= x86_64
-KERNEL_DIR := $(ROOT_DIR)/kernel
-UEFI_DIR := $(ROOT_DIR)/uefi
+# ── Configuration ────────────────────────────────────────────────────
+ROOT_DIR  := $(abspath .)
+VERSION   := 1.0.0
+ARCH      ?= x86_64
 BUILD_DIR := $(ROOT_DIR)/build
-TMP_DIR := $(BUILD_DIR)/tmp
+TMP_DIR   := $(BUILD_DIR)/tmp
 RELEASE_DIR := $(BUILD_DIR)/release
 
-ISO_DIR := $(TMP_DIR)/isofiles
-BOOT_DIR := $(ISO_DIR)/boot
-GRUB_DIR := $(BOOT_DIR)/grub
-EFI_ZIRCON_DIR := $(ISO_DIR)/EFI/ZirconOS
-
-KERNEL_PREFIX := $(TMP_DIR)/kernel-prefix
-UEFI_PREFIX := $(TMP_DIR)/uefi-prefix
-
-KERNEL_CACHE := $(TMP_DIR)/zig-cache/kernel
-UEFI_CACHE := $(TMP_DIR)/zig-cache/uefi
-
-KERNEL_ELF := $(KERNEL_PREFIX)/bin/kernel
-STAGED_KERNEL := $(BOOT_DIR)/kernel.elf
-UEFI_APP := $(UEFI_PREFIX)/bin/zirconos.efi
-STAGED_UEFI_APP := $(EFI_ZIRCON_DIR)/zirconos.efi
-GRUB_CFG := $(ROOT_DIR)/boot/grub/grub.cfg
+# ── Kernel build paths ──────────────────────────────────────────────
+ISO_DIR        := $(TMP_DIR)/isofiles
+BOOT_DIR       := $(ISO_DIR)/boot
+GRUB_DIR       := $(BOOT_DIR)/grub
+KERNEL_PREFIX  := $(TMP_DIR)/kernel-prefix
+KERNEL_CACHE   := $(TMP_DIR)/zig-cache
+KERNEL_ELF     := $(KERNEL_PREFIX)/bin/kernel
+STAGED_KERNEL  := $(BOOT_DIR)/kernel.elf
+GRUB_CFG       := $(ROOT_DIR)/boot/grub/grub.cfg
 STAGED_GRUB_CFG := $(GRUB_DIR)/grub.cfg
-ISO := $(RELEASE_DIR)/zirconos-$(VERSION)-x86_64.iso
+ISO            := $(RELEASE_DIR)/zirconos-$(VERSION)-$(ARCH).iso
 
-QEMU := qemu-system-x86_64
-QEMU_MEM ?= 256M
-OVMF_CODE ?= /usr/share/OVMF/OVMF_CODE_4M.fd
+# ── UEFI build paths ───────────────────────────────────────────────
+UEFI_PREFIX := $(TMP_DIR)/uefi-prefix
+UEFI_CACHE  := $(TMP_DIR)/uefi-cache
+UEFI_EFI    := $(UEFI_PREFIX)/bin/zirconos.efi
+ESP_IMG      = $(BUILD_DIR)/esp-$(ARCH).img
 
-QEMU_ARM := qemu-system-aarch64
+# ── QEMU ────────────────────────────────────────────────────────────
+QEMU           := qemu-system-x86_64
+QEMU_MEM       ?= 256M
+QEMU_ARM       := qemu-system-aarch64
 QEMU_ARM_MACHINE ?= virt
-QEMU_ARM_CPU ?= cortex-a53
+QEMU_ARM_CPU   ?= cortex-a53
 
+# ── UEFI firmware ──────────────────────────────────────────────────
+OVMF_CODE  ?= /usr/share/OVMF/OVMF_CODE_4M.fd
+OVMF_VARS  ?= /usr/share/OVMF/OVMF_VARS_4M.fd
+AAVMF_CODE ?= /usr/share/AAVMF/AAVMF_CODE.fd
+AAVMF_VARS ?= /usr/share/AAVMF/AAVMF_VARS.fd
+
+# ── Build options ──────────────────────────────────────────────────
+DEBUG      ?= true
+ENABLE_IDT ?= false
+EFI_BOOT_NAME ?= BOOTX64.EFI
+
+# ── Default ─────────────────────────────────────────────────────────
 all: iso
 
+# ── Help ────────────────────────────────────────────────────────────
 help:
-	@echo "Targets:"
-	@echo "  make kernel                - build kernel ELF (zig, ARCH=$(ARCH))"
-	@echo "  make uefi                  - build ZirconOS UEFI app (zig, x86_64)"
-	@echo "  make iso                   - build hybrid ISO (BIOS + UEFI, x86_64)"
-	@echo "  make run-uefi-x86_64       - run UEFI ISO in QEMU (x86_64 OVMF)"
-	@echo "  make run-aarch64           - run kernel in QEMU (aarch64 virt, -nographic)"
-	@echo "  make run-aarch64-uefi      - (stub) run aarch64 UEFI flow (TODO: firmware & image)"
-	@echo "  make run-bios              - run ISO in QEMU (x86_64 BIOS)"
-	@echo "  make run                   - alias of run-uefi-x86_64"
-	@echo "  make clean        - remove build artifacts"
-	@echo "  make check-tools  - check required tools exist"
+	@echo "ZirconOS v$(VERSION) Build System"
+	@echo ""
+	@echo "Kernel & ISO:"
+	@echo "  make kernel            - Build kernel ELF (ARCH=$(ARCH))"
+	@echo "  make iso               - Build bootable ISO (x86_64, GRUB/BIOS)"
+	@echo ""
+	@echo "BIOS boot:"
+	@echo "  make run-bios          - Run ISO in QEMU (x86_64 BIOS)"
+	@echo "  make run-aarch64       - Run kernel in QEMU (aarch64 virt)"
+	@echo ""
+	@echo "UEFI boot:"
+	@echo "  make run-uefi-x86_64   - Run UEFI app in QEMU+OVMF (x86_64)"
+	@echo "  make run-uefi-aarch64  - Run UEFI app in QEMU+AAVMF (aarch64)"
+	@echo "  make uefi ARCH=x86_64  - Build UEFI .efi only"
+	@echo "  make esp  ARCH=x86_64  - Build ESP FAT image"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make clean             - Remove build artifacts"
+	@echo "  make check-tools       - Check required tools (kernel/ISO)"
+	@echo "  make check-uefi-tools  - Check required tools (UEFI)"
+	@echo ""
+	@echo "Architectures: x86_64, aarch64, loong64, riscv64, mips64el"
+	@echo "  make kernel ARCH=aarch64"
+	@echo ""
+	@echo "Options:"
+	@echo "  DEBUG=true/false        - Enable debug logging (default: true)"
+	@echo "  ENABLE_IDT=true/false   - Enable IDT/syscall x86_64 (default: false)"
 
+# ── Tool checks ────────────────────────────────────────────────────
 check-tools:
 	@command -v zig >/dev/null || (echo "missing: zig" && exit 1)
 	@command -v grub-mkrescue >/dev/null || (echo "missing: grub-mkrescue (grub-pc-bin)" && exit 1)
 	@command -v xorriso >/dev/null || (echo "missing: xorriso" && exit 1)
-	@command -v mformat >/dev/null || (echo "missing: mformat (mtools)" && exit 1)
-	@command -v $(QEMU) >/dev/null || (echo "missing: $(QEMU) (qemu-system-x86)" && exit 1)
-	@echo "OK: tools found"
+	@command -v $(QEMU) >/dev/null || (echo "missing: $(QEMU)" && exit 1)
+	@echo "OK: kernel/ISO tools found"
 
+check-uefi-tools:
+	@command -v zig >/dev/null || (echo "missing: zig" && exit 1)
+	@command -v mformat >/dev/null || (echo "missing: mformat (install mtools)" && exit 1)
+	@command -v mcopy >/dev/null || (echo "missing: mcopy (install mtools)" && exit 1)
+	@command -v dd >/dev/null || (echo "missing: dd (coreutils)" && exit 1)
+	@echo "OK: UEFI tools found"
+
+# ═══════════════════════════════════════════════════════════════════
+#  Kernel build
+# ═══════════════════════════════════════════════════════════════════
 kernel: check-tools
-	@echo "[kernel] building..."
+	@echo "[kernel] building... (arch=$(ARCH), debug=$(DEBUG), idt=$(ENABLE_IDT))"
 	@mkdir -p "$(KERNEL_PREFIX)" "$(KERNEL_CACHE)"
-	@cd "$(KERNEL_DIR)" && zig build -Doptimize=Debug -Darch="$(ARCH)" --cache-dir "$(KERNEL_CACHE)" --prefix "$(KERNEL_PREFIX)"
+	@cd "$(ROOT_DIR)" && zig build \
+		-Doptimize=Debug \
+		-Darch="$(ARCH)" \
+		-Ddebug=$(DEBUG) \
+		-Denable_idt=$(ENABLE_IDT) \
+		--cache-dir "$(KERNEL_CACHE)" \
+		--prefix "$(KERNEL_PREFIX)"
 
-uefi: check-tools
-	@echo "[uefi] building..."
-	@mkdir -p "$(UEFI_PREFIX)" "$(UEFI_CACHE)"
-	@cd "$(UEFI_DIR)" && zig build -Doptimize=Debug --cache-dir "$(UEFI_CACHE)" --prefix "$(UEFI_PREFIX)"
-
+# ═══════════════════════════════════════════════════════════════════
+#  GRUB ISO (x86_64 BIOS)
+# ═══════════════════════════════════════════════════════════════════
 $(GRUB_DIR):
 	@mkdir -p "$(GRUB_DIR)"
 
-$(EFI_ZIRCON_DIR):
-	@mkdir -p "$(EFI_ZIRCON_DIR)"
-
 $(STAGED_KERNEL): kernel | $(GRUB_DIR)
 	@cp -f "$(KERNEL_ELF)" "$(STAGED_KERNEL)"
-
-$(STAGED_UEFI_APP): uefi | $(EFI_ZIRCON_DIR)
-	@cp -f "$(UEFI_APP)" "$(STAGED_UEFI_APP)"
 
 $(STAGED_GRUB_CFG): $(GRUB_CFG) | $(GRUB_DIR)
 	@cp -f "$(GRUB_CFG)" "$(STAGED_GRUB_CFG)"
 
 iso: ARCH=x86_64
-iso: check-tools $(STAGED_UEFI_APP) $(STAGED_KERNEL) $(STAGED_GRUB_CFG)
-	@echo "[iso] building hybrid ISO (BIOS + UEFI)..."
+iso: check-tools $(STAGED_KERNEL) $(STAGED_GRUB_CFG)
+	@echo "[iso] building ISO..."
 	@mkdir -p "$(RELEASE_DIR)"
-	@grub-mkrescue -o "$(ISO)" "$(ISO_DIR)" >/dev/null
+	@grub-mkrescue -o "$(ISO)" "$(ISO_DIR)" 2>/dev/null
 	@echo "OK: $(ISO)"
 
-run: run-uefi-x86_64
+# ═══════════════════════════════════════════════════════════════════
+#  UEFI application build
+# ═══════════════════════════════════════════════════════════════════
+uefi: check-uefi-tools
+	@echo "[uefi] building UEFI app (arch=$(ARCH))..."
+	@mkdir -p "$(UEFI_PREFIX)" "$(UEFI_CACHE)"
+	@cd "$(ROOT_DIR)" && zig build uefi \
+		-Doptimize=Debug \
+		-Darch="$(ARCH)" \
+		--cache-dir "$(UEFI_CACHE)" \
+		--prefix "$(UEFI_PREFIX)"
+	@echo "OK: $(UEFI_EFI)"
 
-run-uefi: run-uefi-x86_64
+# ═══════════════════════════════════════════════════════════════════
+#  ESP (EFI System Partition) image
+# ═══════════════════════════════════════════════════════════════════
+esp: uefi
+	@echo "[esp] creating FAT ESP image ($(ARCH), boot=$(EFI_BOOT_NAME))..."
+	@mkdir -p "$(BUILD_DIR)" "$(TMP_DIR)"
+	@dd if=/dev/zero of="$(ESP_IMG)" bs=1M count=64 status=none
+	@mformat -i "$(ESP_IMG)" ::
+	@mmd -i "$(ESP_IMG)" ::/EFI
+	@mmd -i "$(ESP_IMG)" ::/EFI/BOOT
+	@mcopy -i "$(ESP_IMG)" "$(UEFI_EFI)" "::/EFI/BOOT/$(EFI_BOOT_NAME)"
+	@echo "OK: $(ESP_IMG)"
 
-run-uefi-x86_64: iso
-	@if [ ! -f "$(OVMF_CODE)" ]; then echo "missing OVMF firmware: $(OVMF_CODE) (install: ovmf)"; exit 1; fi
-	@echo "[run-uefi-x86_64] starting qemu (OVMF x86_64)..."
+# ═══════════════════════════════════════════════════════════════════
+#  Run targets – BIOS
+# ═══════════════════════════════════════════════════════════════════
+run: run-bios
+
+run-bios: iso
+	@echo "[run-bios] starting QEMU (x86_64 BIOS)..."
 	@$(QEMU) \
-		-machine q35 \
-		-drive if=pflash,format=raw,readonly=on,file="$(OVMF_CODE)" \
 		-m $(QEMU_MEM) \
 		-cdrom "$(ISO)" \
 		-serial stdio \
@@ -110,29 +171,56 @@ run-uefi-x86_64: iso
 
 run-aarch64: ARCH=aarch64
 run-aarch64: kernel
-	@echo "[run-aarch64] starting qemu-system-aarch64 (virt, -nographic)..."
+	@echo "[run-aarch64] starting qemu-system-aarch64..."
 	@$(QEMU_ARM) \
 		-machine $(QEMU_ARM_MACHINE) \
 		-cpu $(QEMU_ARM_CPU) \
 		-nographic \
 		-kernel "$(KERNEL_ELF)"
 
-run-aarch64-uefi:
-	@echo "run-aarch64-uefi: 需要为 aarch64 准备 UEFI 固件与启动镜像，目前作为占位目标保留，后续按实际固件路径和镜像格式补全。"
-	@exit 1
+# ═══════════════════════════════════════════════════════════════════
+#  Run targets – UEFI
+# ═══════════════════════════════════════════════════════════════════
 
-run-bios: iso
-	@echo "[run-bios] starting qemu (bios)..."
+# --- x86_64 UEFI (OVMF) ---
+run-uefi-x86_64: ARCH = x86_64
+run-uefi-x86_64: EFI_BOOT_NAME = BOOTX64.EFI
+run-uefi-x86_64: esp
+	@echo "[run-uefi-x86_64] starting QEMU with OVMF..."
+	@cp -f "$(OVMF_VARS)" "$(TMP_DIR)/OVMF_VARS.fd"
 	@$(QEMU) \
+		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+		-drive if=pflash,format=raw,file="$(TMP_DIR)/OVMF_VARS.fd" \
+		-drive format=raw,file="$(ESP_IMG)" \
 		-m $(QEMU_MEM) \
-		-cdrom "$(ISO)" \
 		-serial stdio \
 		-display gtk \
+		-net none \
 		-no-reboot \
 		-no-shutdown
 
+# --- aarch64 UEFI (AAVMF) ---
+run-uefi-aarch64: ARCH = aarch64
+run-uefi-aarch64: EFI_BOOT_NAME = BOOTAA64.EFI
+run-uefi-aarch64: esp
+	@echo "[run-uefi-aarch64] starting QEMU with AAVMF..."
+	@cp -f "$(AAVMF_VARS)" "$(TMP_DIR)/AAVMF_VARS.fd"
+	@$(QEMU_ARM) \
+		-machine $(QEMU_ARM_MACHINE) \
+		-cpu $(QEMU_ARM_CPU) \
+		-drive if=pflash,format=raw,readonly=on,file=$(AAVMF_CODE) \
+		-drive if=pflash,format=raw,file="$(TMP_DIR)/AAVMF_VARS.fd" \
+		-drive format=raw,file="$(ESP_IMG)" \
+		-m $(QEMU_MEM) \
+		-nographic \
+		-net none \
+		-no-reboot \
+		-no-shutdown
+
+# ═══════════════════════════════════════════════════════════════════
+#  Clean
+# ═══════════════════════════════════════════════════════════════════
 clean:
-	@rm -rf "$(BUILD_DIR)"
+	@rm -rf "$(BUILD_DIR)" .zig-cache zig-out
 
 distclean: clean
-

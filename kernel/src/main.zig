@@ -1,52 +1,118 @@
 const builtin = @import("builtin");
+const arch = @import("arch.zig");
+const klog = @import("rtl/klog.zig");
 
-/// 内核主入口。x86_64 时作为 _start 被 GRUB Multiboot2 调用；其他架构由各 arch/entry.zig 调用。
+const KERNEL_END_FALLBACK: usize = 4 * 1024 * 1024;
+
+comptime {
+    switch (builtin.target.cpu.arch) {
+        .aarch64 => _ = @import("arch/aarch64/mod.zig"),
+        .loongarch64 => _ = @import("arch/loong64/mod.zig"),
+        .riscv64 => _ = @import("arch/riscv64/mod.zig"),
+        .mips64el => _ = @import("arch/mips64el/mod.zig"),
+        else => {},
+    }
+}
+
 pub export fn kernel_main(magic: u32, info_addr: usize) callconv(.c) noreturn {
     switch (builtin.target.cpu.arch) {
-        .x86_64 => start_x86_64(magic, info_addr),
-        .aarch64 => start_aarch64(),
-        else => unreachable, // 目前只支持 x86_64 与 aarch64 两条启动路径
+        .x86_64 => startX86_64(magic, info_addr),
+        .aarch64 => startAarch64(),
+        else => startStub(),
     }
 }
 
-fn start_x86_64(magic: u32, info_addr: usize) noreturn {
-    const vga = @import("hal/x86_64/vga_text.zig");
-    const mb2 = @import("arch/x86_64/multiboot2.zig");
+fn startX86_64(magic: u32, info_addr: usize) noreturn {
+    const boot = arch.impl.boot;
+    const paging = arch.impl.paging;
+    const frame = @import("mm/frame.zig");
+    const vm = @import("mm/vm.zig");
+    const server = @import("ps/server.zig");
 
-    vga.clear();
+    arch.consoleClear();
 
-    if (magic != mb2.MULTIBOOT2_BOOTLOADER_MAGIC) {
-        vga.write("Hello  ZirconOS!\n");
-        hang_x86();
+    if (magic != boot.MULTIBOOT2_BOOTLOADER_MAGIC) {
+        arch.consoleWrite("Invalid multiboot magic!\n");
+        arch.halt();
     }
 
-    _ = info_addr; // 预留：后续解析 multiboot2 信息结构
-    vga.write("Hello  ZirconOS!\n");
+    klog.info("ZirconOS v1.0 (NT-style Microkernel / x86_64) booting...", .{});
+    if (klog.DEBUG_MODE) {
+        klog.info("Debug mode: ON", .{});
+    }
 
-    hang_x86();
-}
+    const kernel_end = KERNEL_END_FALLBACK;
+    const boot_info = boot.parse(info_addr);
+    if (boot_info) |info| {
+        klog.info("Multiboot2: mem_lower=%u KB, mem_upper=%u KB, mmap_entries=%u", .{
+            info.mem_lower_kb,
+            info.mem_upper_kb,
+            info.mmap_entry_count,
+        });
+    }
 
-fn start_aarch64() noreturn {
-    const uart = @import("hal/arm64/uart_pl011.zig");
-    const Arch = @import("arch/arm64/mod.zig").Arch;
+    var alloc: frame.FrameAllocator = undefined;
+    alloc.init(boot_info, kernel_end, info_addr);
+    klog.info("Frame allocator: total_frames=%u", .{alloc.total_frames});
 
-    uart.init();
-    uart.write("ZirconOS kernel (");
-    uart.write(Arch.name);
-    uart.write(") booting...\n");
-    uart.write("Hello ZirconOS from AArch64!\n");
+    var kernel_space = vm.createAddressSpace(&alloc) orelse {
+        klog.err("Failed to create kernel address space", .{});
+        arch.halt();
+    };
 
-    hang_aarch64();
-}
+    const identity_pages: usize = 1024;
+    var i: usize = 0;
+    while (i < identity_pages) : (i += 1) {
+        const virt = i * paging.page_size;
+        const flags = vm.MapFlags{ .writable = true, .executable = true };
+        if (!kernel_space.mapPage(virt, virt, flags)) {
+            klog.err("Identity map failed at virt=0x%x", .{virt});
+            arch.halt();
+        }
+    }
+    klog.info("Identity mapping: 0-4MB OK", .{});
 
-fn hang_x86() noreturn {
+    kernel_space.activate();
+    enablePagingX86();
+    klog.info("Paging enabled", .{});
+
+    server.init(&alloc);
+
+    if (@import("build_options").enable_idt) {
+        const idt = @import("arch/x86_64/idt.zig");
+        idt.init();
+        klog.info("IDT initialized", .{});
+    }
+
+    klog.info("=== ZirconOS v1.0 Kernel Ready ===", .{});
+    klog.info("Architecture: x86_64", .{});
+    klog.info("Modules: ke(sched/timer/intr) mm(frame/vm) ps(proc/server) lpc(ipc) ob se io", .{});
+
     while (true) {
+        server.handleMessage();
         asm volatile ("hlt");
     }
 }
 
-fn hang_aarch64() noreturn {
-    while (true) {
-        asm volatile ("wfi");
-    }
+fn enablePagingX86() void {
+    asm volatile (
+        \\ mov %%cr0, %%rax
+        \\ or $0x80000000, %%eax
+        \\ mov %%rax, %%cr0
+        :
+        :
+        : .{ .rax = true, .memory = true }
+    );
+}
+
+fn startAarch64() noreturn {
+    const uart = @import("hal/aarch64/uart.zig");
+    uart.init();
+    uart.write("ZirconOS v1.0 (aarch64) booting...\n");
+    uart.write("NT-style Microkernel / AArch64 stub\n");
+    arch.halt();
+}
+
+fn startStub() noreturn {
+    arch.halt();
 }

@@ -51,7 +51,7 @@
 
 ## 命名与目录约定（约束未来扩展）
 
-- **内核模块**：`kernel/src/{arch,hal,kernel}`（后续可加 `kernel/src/kernel/` 存放 sched/vm/ipc/syscall）
+- **内核模块**：`kernel/src/{arch,hal,core}`（core 存放 sched/vm/ipc/syscall 等微内核核心）
 - **用户态服务**：`servers/<name>/`（每个服务自带 `proto/` 或 `ipc/` 定义）
 - **子系统**：`subsystems/<name>/`（Win32/POSIX/WOW64）
 - **协议与 ABI**：集中在 `docs/abi/`（后续建立），变更需标注版本与兼容策略

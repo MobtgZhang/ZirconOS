@@ -1,13 +1,14 @@
-OUTPUT_FORMAT(elf64-x86-64)
+OUTPUT_FORMAT(elf64-loongarch)
 ENTRY(_start)
 
 SECTIONS
 {
-  . = 1M;
+  . = 0x9000000000200000;
+  PROVIDE(_kernel_start = .);
 
   .text : ALIGN(4K)
   {
-    *(.multiboot2)
+    *(.text.boot)
     *(.text .text.*)
   }
 
@@ -26,5 +27,7 @@ SECTIONS
     *(COMMON)
     *(.bss .bss.*)
   }
-}
 
+  . = ALIGN(4K);
+  PROVIDE(_kernel_end = .);
+}

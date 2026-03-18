@@ -1,5 +1,3 @@
-const std = @import("std");
-
 const VGA_WIDTH: usize = 80;
 const VGA_HEIGHT: usize = 25;
 
@@ -74,7 +72,6 @@ fn newLine() void {
 
 fn scroll() void {
     const b = buf();
-    // 上移一行
     var y: usize = 1;
     while (y < VGA_HEIGHT) : (y += 1) {
         var x: usize = 0;
@@ -82,7 +79,6 @@ fn scroll() void {
             b[(y - 1) * VGA_WIDTH + x] = b[y * VGA_WIDTH + x];
         }
     }
-    // 清空最后一行
     var x: usize = 0;
     while (x < VGA_WIDTH) : (x += 1) {
         b[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = .{ .ch = ' ', .attr = attr };
@@ -93,8 +89,6 @@ fn makeAttr(fg: Color, bg: Color) u8 {
     return (@as(u8, @intFromEnum(fg)) & 0x0F) | ((@as(u8, @intFromEnum(bg)) & 0x0F) << 4);
 }
 
-// 预留：后续支持 setColor / fmt 输出
 pub fn setColor(fg: Color, bg: Color) void {
     attr = makeAttr(fg, bg);
 }
-

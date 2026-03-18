@@ -1,24 +1,27 @@
-pub const Arch = struct {
-    /// 架构人类可读名称
-    pub const name: []const u8 = "loong64";
+pub const boot = @import("boot.zig");
+pub const paging = @import("paging.zig");
 
-    /// 架构 ABI 名称（用于日志 / 协议）
-    pub const abi_name: []const u8 = "loongarch64";
+pub const name: []const u8 = "loong64";
+pub const PAGE_SIZE: usize = 16384;
 
-    /// 架构位数
-    pub const bits: u8 = 64;
+extern fn kernel_main(magic: u32, info_addr: usize) callconv(.c) noreturn;
 
-    /// ZirconOS 为 loong64 分配的内部架构 ID（自定义）
-    pub const arch_id: u16 = 0x0164;
-
-    /// ZirconOS 内核架构层接口版本号（主+次）
-    pub const api_major: u8 = 0;
-    pub const api_minor: u8 = 1;
-};
-
-pub export fn _start() callconv(.C) noreturn {
-    // TODO: LoongArch64 启动入口
-    unreachable; // 目前为占位实现
+pub export fn _start() callconv(.c) noreturn {
+    kernel_main(0, 0);
 }
 
+pub fn consoleWrite(_: []const u8) void {}
+pub fn consoleClear() void {}
 
+pub fn halt() noreturn {
+    while (true) {
+        asm volatile ("idle 0");
+    }
+}
+
+pub fn sendEoi(_: u8) void {}
+pub fn initTimer() void {}
+pub fn initPic() void {}
+pub fn unmaskIrq(_: u8) void {}
+pub fn enableInterrupts() void {}
+pub fn disableInterrupts() void {}
