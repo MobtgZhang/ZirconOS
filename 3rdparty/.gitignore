@@ -1,0 +1,7 @@
+# 以下目录由独立仓库克隆得到（见 themes.repos / fetch-themes.sh），不纳入主仓库版本控制
+/ZirconOSClassic/
+/ZirconOSLuna/
+/ZirconOSAero/
+/ZirconOSModern/
+/ZirconOSFluent/
+/ZirconOSSunValley/

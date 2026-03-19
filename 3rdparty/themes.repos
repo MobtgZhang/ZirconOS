@@ -1,0 +1,10 @@
+# 桌面主题独立仓库清单（供 fetch-themes.sh 使用）
+# 格式：目录名<Tab或空格>clone URL
+# 目录名将创建在 3rdparty/ 下，需与 build.zig 中 desktop_themes 的 .dir 一致
+
+ZirconOSClassic   https://github.com/MobtgZhang/ZirconOSClassic.git
+ZirconOSLuna      https://github.com/MobtgZhang/ZirconOSLuna.git
+ZirconOSAero      https://github.com/MobtgZhang/ZirconOSAero.git
+ZirconOSModern    https://github.com/MobtgZhang/ZirconOSModern.git
+ZirconOSFluent    https://github.com/MobtgZhang/ZirconOSFluent.git
+ZirconOSSunValley https://github.com/MobtgZhang/ZirconOSSunValley.git

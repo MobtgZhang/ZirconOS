@@ -1,18 +1,46 @@
 # ZirconOS 桌面主题 (3rdparty)
 
 本目录包含 ZirconOS 操作系统的多个 **Windows 风格桌面环境** 实现。
-每个子项目是一个独立的 Zig 模块，提供不同 Windows 版本的视觉主题和桌面 Shell。
+每个子项目是一个 **独立 Git 仓库**，构建前需克隆到 `3rdparty/<目录名>/`（与主仓库中的 `build.zig` 路径一致）。
+
+### 一键拉取（推荐）
+
+在仓库根目录执行：
+
+```bash
+./3rdparty/fetch-themes.sh          # 克隆全部主题仓库
+./3rdparty/fetch-themes.sh --shallow   # 浅克隆（体积小）
+./3rdparty/fetch-themes.sh --update    # 已存在时 git pull
+```
+
+或使用 Make：`make fetch-themes`
+
+仓库列表由 [`themes.repos`](themes.repos) 维护，脚本为 [`fetch-themes.sh`](fetch-themes.sh)。
+
+### 使用 Git Submodule（可选）
+
+若希望主题目录随主仓库版本固定，可改用子模块（需自行初始化）：
+
+```bash
+git submodule add https://github.com/MobtgZhang/ZirconOSLuna.git 3rdparty/ZirconOSLuna
+# …对其余主题重复，或继续用 fetch-themes.sh 仅作参考 URL
+```
+
+---
 
 ## 主题一览
 
-| 项目 | 对应 Windows 版本 | 设计风格 | 状态 |
-|------|-------------------|---------|------|
-| [ZirconOSClassic](https://github.com/MobtgZhang/ZirconOSClassic/) | Windows 2000 / 经典主题 | 经典 3D 灰色按钮 + 直角窗口 | 框架 |
-| [ZirconOSLuna](https://github.com/MobtgZhang/ZirconOSLuna/) | Windows XP | Luna 主题（蓝/橄榄绿/银色三套配色） | **已实现** |
-| [ZirconOSAero](https://github.com/MobtgZhang/ZirconOSAero/) | Windows Vista / 7 | Aero 毛玻璃 + 透明边框 + Flip 3D | 框架 |
-| [ZirconOSModern](https://github.com/MobtgZhang/ZirconOSModern/) | Windows 8 / 8.1 | Metro / Modern UI 扁平磁贴 | 框架 |
-| [ZirconOSFluent](https://github.com/MobtgZhang/ZirconOSFluent/) | Windows 10 | Fluent Design + 亚克力材质 + 暗色模式 | 框架 |
-| [ZirconOSSunValley](https://github.com/MobtgZhang/ZirconOSSunValley/) | Windows 11 | Sun Valley + Mica 云母材质 + 大圆角 | 框架 |
+| 项目 | 对应 Windows 版本 | 设计风格 | 状态 | Git 克隆（HTTPS） |
+|------|-------------------|---------|------|-------------------|
+| [ZirconOSClassic](https://github.com/MobtgZhang/ZirconOSClassic/) | Windows 2000 / 经典主题 | 经典 3D 灰色按钮 + 直角窗口 | 框架 | `https://github.com/MobtgZhang/ZirconOSClassic.git` |
+| [ZirconOSLuna](https://github.com/MobtgZhang/ZirconOSLuna/) | Windows XP | Luna 主题（蓝/橄榄绿/银色三套配色） | **已实现** | `https://github.com/MobtgZhang/ZirconOSLuna.git` |
+| [ZirconOSAero](https://github.com/MobtgZhang/ZirconOSAero/) | Windows Vista / 7 | Aero 毛玻璃 + 透明边框 + Flip 3D | 框架 | `https://github.com/MobtgZhang/ZirconOSAero.git` |
+| [ZirconOSModern](https://github.com/MobtgZhang/ZirconOSModern/) | Windows 8 / 8.1 | Metro / Modern UI 扁平磁贴 | 框架 | `https://github.com/MobtgZhang/ZirconOSModern.git` |
+| [ZirconOSFluent](https://github.com/MobtgZhang/ZirconOSFluent/) | Windows 10 | Fluent Design + 亚克力材质 + 暗色模式 | 框架 | `https://github.com/MobtgZhang/ZirconOSFluent.git` |
+| [ZirconOSSunValley](https://github.com/MobtgZhang/ZirconOSSunValley/) | Windows 11 | Sun Valley + Mica 云母材质 + 大圆角 | 框架 | `https://github.com/MobtgZhang/ZirconOSSunValley.git` |
+
+SSH 地址将 `https://github.com/` 换为 `git@github.com:`、末尾 `.git` 不变即可，例如  
+`git@github.com:MobtgZhang/ZirconOSLuna.git`。
 
 > **状态说明**：「已实现」表示具备完整桌面 Shell（登录、桌面、任务栏、开始菜单、窗口装饰、控件），
 > 「框架」表示已创建项目骨架，待按照 Luna 模板进行开发。
@@ -63,6 +91,12 @@ shell = explorer
 
 ## 构建
 
+**请先拉取主题源码**（若 `3rdparty/ZirconOSLuna` 等目录尚不存在）：
+
+```bash
+./3rdparty/fetch-themes.sh
+```
+
 从项目根目录构建指定桌面主题：
 
 ```bash
@@ -88,7 +122,7 @@ zig build
 
 新增桌面主题的步骤：
 
-1. 复制 `ZirconOSLuna/` 作为模板
+1. 先执行 `./fetch-themes.sh` 拉取仓库后，复制 `ZirconOSLuna/` 作为模板（或在独立仓库中从零创建）
 2. 修改 `build.zig.zon` 中的名称和 fingerprint
 3. 实现 `theme.zig` 中的配色方案和尺寸常量
 4. 按照目标 Windows 版本的视觉规范实现各组件
