@@ -7,12 +7,12 @@
 
 | 项目 | 对应 Windows 版本 | 设计风格 | 状态 |
 |------|-------------------|---------|------|
-| [ZirconOSClassic](ZirconOSClassic/) | Windows 2000 / 经典主题 | 经典 3D 灰色按钮 + 直角窗口 | 框架 |
-| [ZirconOSLuna](ZirconOSLuna/) | Windows XP | Luna 主题（蓝/橄榄绿/银色三套配色） | **已实现** |
-| [ZirconOSAero](ZirconOSAero/) | Windows Vista / 7 | Aero 毛玻璃 + 透明边框 + Flip 3D | 框架 |
-| [ZirconOSModern](ZirconOSModern/) | Windows 8 / 8.1 | Metro / Modern UI 扁平磁贴 | 框架 |
-| [ZirconOSFluent](ZirconOSFluent/) | Windows 10 | Fluent Design + 亚克力材质 + 暗色模式 | 框架 |
-| [ZirconOSSunValley](ZirconOSSunValley/) | Windows 11 | Sun Valley + Mica 云母材质 + 大圆角 | 框架 |
+| [ZirconOSClassic](https://github.com/MobtgZhang/ZirconOSClassic/) | Windows 2000 / 经典主题 | 经典 3D 灰色按钮 + 直角窗口 | 框架 |
+| [ZirconOSLuna](https://github.com/MobtgZhang/ZirconOSLuna/) | Windows XP | Luna 主题（蓝/橄榄绿/银色三套配色） | **已实现** |
+| [ZirconOSAero](https://github.com/MobtgZhang/ZirconOSAero/) | Windows Vista / 7 | Aero 毛玻璃 + 透明边框 + Flip 3D | 框架 |
+| [ZirconOSModern](https://github.com/MobtgZhang/ZirconOSModern/) | Windows 8 / 8.1 | Metro / Modern UI 扁平磁贴 | 框架 |
+| [ZirconOSFluent](https://github.com/MobtgZhang/ZirconOSFluent/) | Windows 10 | Fluent Design + 亚克力材质 + 暗色模式 | 框架 |
+| [ZirconOSSunValley](https://github.com/MobtgZhang/ZirconOSSunValley/) | Windows 11 | Sun Valley + Mica 云母材质 + 大圆角 | 框架 |
 
 > **状态说明**：「已实现」表示具备完整桌面 Shell（登录、桌面、任务栏、开始菜单、窗口装饰、控件），
 > 「框架」表示已创建项目骨架，待按照 Luna 模板进行开发。
