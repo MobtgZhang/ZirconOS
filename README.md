@@ -74,21 +74,30 @@ ZirconOS/
 │           ├── cmd.zig        CMD 命令提示符
 │           ├── powershell.zig PowerShell
 │           └── wow64.zig      WOW64 32位兼容层
-├── 3rdparty/              # 桌面主题（独立子项目）
-│   ├── ZirconOSClassic/   #   Windows 2000 经典主题
-│   ├── ZirconOSLuna/      #   Windows XP Luna 主题 ★ 已完整实现
-│   ├── ZirconOSAero/      #   Windows Vista/7 Aero 毛玻璃主题
-│   ├── ZirconOSModern/    #   Windows 8/8.1 Metro 扁平磁贴主题
-│   ├── ZirconOSFluent/    #   Windows 10 Fluent Design 主题
-│   ├── ZirconOSSunValley/ #   Windows 11 Sun Valley 主题
-│   └── README.md          #   桌面主题总览
+├── 3rdparty/              # 桌面主题（独立 Git 仓库，需先拉取）
+│   ├── themes.repos       #   各主题 clone URL 清单
+│   ├── fetch-themes.sh    #   一键克隆全部主题到本目录
+│   ├── ZirconOSClassic/   #   （克隆后）Windows 2000 经典主题
+│   ├── ZirconOSLuna/      #   （克隆后）Windows XP Luna 主题 ★ 已完整实现
+│   ├── ZirconOSAero/      #   （克隆后）Windows Vista/7 Aero 毛玻璃主题
+│   ├── ZirconOSModern/    #   （克隆后）Windows 8/8.1 Metro 扁平磁贴主题
+│   ├── ZirconOSFluent/    #   （克隆后）Windows 10 Fluent Design 主题
+│   ├── ZirconOSSunValley/ #   （克隆后）Windows 11 Sun Valley 主题
+│   └── README.md          #   桌面主题总览与 Git 地址说明
 └── docs/                  # 设计文档
 ```
 
 ## 桌面主题
 
 ZirconOS 支持六套 Windows 风格桌面主题，覆盖 Windows 2000 到 Windows 11 的完整视觉演进。
-每套主题是独立的 Zig 子项目，位于 `3rdparty/` 目录下。
+每套主题是独立的 Zig 子项目，源码在 **各自的 GitHub 仓库**；克隆主仓库后需先拉取到 `3rdparty/`：
+
+```bash
+./3rdparty/fetch-themes.sh
+# 或: make fetch-themes
+```
+
+详见 [`3rdparty/README.md`](3rdparty/README.md) 中的仓库 URL 与 Submodule 说明。
 
 | 主题 | Windows 版本 | 状态 | 特色 |
 |------|-------------|------|------|
