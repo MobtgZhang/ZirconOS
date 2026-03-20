@@ -213,25 +213,25 @@ const DeviceContext = struct {
     is_valid: bool = false,
     hwnd: u64 = 0,
     text_color: COLORREF = 0x000000,
-    bg_color: COLORREF = 0xFFFFFF,
-    bg_mode: u32 = OPAQUE,
-    text_align: u32 = TA_LEFT | TA_TOP,
+    bg_color: COLORREF = 0,
+    bg_mode: u32 = 0,
+    text_align: u32 = 0,
     current_pen: HGDIOBJ = 0,
     current_brush: HGDIOBJ = 0,
     current_font: HGDIOBJ = 0,
     current_bitmap: HGDIOBJ = 0,
     pen_pos_x: i32 = 0,
     pen_pos_y: i32 = 0,
-    rop2: u32 = 13,
-    map_mode: u32 = 1,
+    rop2: u32 = 0,
+    map_mode: u32 = 0,
     viewport_org_x: i32 = 0,
     viewport_org_y: i32 = 0,
     window_org_x: i32 = 0,
     window_org_y: i32 = 0,
     clip_left: i32 = 0,
     clip_top: i32 = 0,
-    clip_right: i32 = 800,
-    clip_bottom: i32 = 600,
+    clip_right: i32 = 0,
+    clip_bottom: i32 = 0,
 };
 
 var device_contexts: [MAX_DCS]DeviceContext = [_]DeviceContext{.{}} ** MAX_DCS;
@@ -256,6 +256,13 @@ pub fn CreateCompatibleDC(hdc: HDC) HDC {
     dc.* = .{};
     dc.handle = next_dc_handle;
     dc.is_valid = true;
+    dc.bg_color = 0xFFFFFF;
+    dc.bg_mode = OPAQUE;
+    dc.text_align = TA_LEFT | TA_TOP;
+    dc.rop2 = 13;
+    dc.map_mode = 1;
+    dc.clip_right = 800;
+    dc.clip_bottom = 600;
     next_dc_handle += 1;
     dc_count += 1;
     return dc.handle;

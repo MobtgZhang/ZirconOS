@@ -163,7 +163,7 @@ pub const ElfSymbol = struct {
 };
 
 pub const ElfImage = struct {
-    header: ob.ObjectHeader = .{ .obj_type = .section },
+    header: ob.ObjectHeader = .{},
     entry_point: u64 = 0,
     base_address: u64 = 0,
     end_address: u64 = 0,

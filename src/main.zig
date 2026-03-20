@@ -61,8 +61,14 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     const gdi32_mod = @import("subsystems/win32/gdi32.zig");
     const wow64_mod = @import("subsystems/win32/wow64.zig");
     const sys_config = @import("config/config.zig");
+    const drivers = @import("drivers/mod.zig");
+    const display = drivers.video.display;
+    const audio = @import("drivers/audio/audio.zig");
+    const registry = @import("registry/registry.zig");
 
-    // ═══ Phase 0: Early Init ═══
+    // ═══════════════════════════════════════════════════════
+    //  Stage A: Early Serial Log  (output: serial only)
+    // ═══════════════════════════════════════════════════════
     arch.initSerial();
 
     klog.info("========================================", .{});
@@ -76,8 +82,8 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         klog.info("Build: RELEASE mode (optimized)", .{});
     }
 
-    // ═══ Phase 0.5: Load Configuration ═══
-    klog.info("--- Loading System Configuration ---", .{});
+    // ═══ Phase 0: Configuration ═══
+    klog.info("--- Phase 0: Loading System Configuration ---", .{});
     sys_config.init();
 
     klog.info("Config: hostname=%s, version=%s, arch=%s", .{
@@ -98,7 +104,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     });
     klog.info("Config: %u total entries loaded", .{sys_config.getTotalConfigEntries()});
 
-    // ═══ Phase 1: Boot Verification + Hardware Init ═══
+    // ═══ Phase 1: Boot Verification + Core Hardware ═══
     klog.info("--- Phase 1: Boot + Early Kernel ---", .{});
 
     if (magic != boot.MULTIBOOT2_BOOTLOADER_MAGIC) {
@@ -117,30 +123,19 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     klog.info("Kernel end estimated: 0x%x (stack_top=0x%x)", .{ kernel_end, stack_top_addr });
     const boot_info = boot.parse(info_addr);
 
-    // Initialize framebuffer console.
-    // Always use pixel-based rendering when bootloader provides a framebuffer,
-    // because VGA text mode (0xB8000) is unreliable after GRUB gfxterm.
+    // Save framebuffer info for later use; do NOT enable the framebuffer
+    // console yet so that all boot log messages go to serial only.
+    var has_gfx_fb = false;
     if (boot_info) |info| {
-        if (info.fb_info) |fb| {
-            const fb_addr = @as(usize, @truncate(fb.addr));
+        if (info.fb_info) |fb_i| {
             klog.info("FB tag: addr=0x%x %ux%u pitch=%u bpp=%u type=%u", .{
-                fb_addr, fb.width, fb.height, fb.pitch, fb.bpp, fb.fb_type,
+                @as(usize, @truncate(fb_i.addr)), fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp, fb_i.fb_type,
             });
-            if (fb.fb_type != 2 and fb.width > 0 and fb.height > 0 and fb.bpp > 0) {
-                arch.initFramebuffer(fb_addr, fb.width, fb.height, fb.pitch, fb.bpp);
-                klog.info("Framebuffer console active: %ux%u @0x%x bpp=%u", .{
-                    fb.width, fb.height, fb_addr, fb.bpp,
-                });
-            } else if (fb.fb_type == 2) {
-                klog.info("Framebuffer: VGA text mode (%ux%u) - using VGA driver", .{ fb.width, fb.height });
+            if (fb_i.fb_type != 2 and fb_i.width > 0 and fb_i.height > 0 and fb_i.bpp > 0) {
+                has_gfx_fb = true;
             }
-        } else {
-            klog.info("No framebuffer tag from bootloader - using VGA text driver", .{});
         }
-    } else {
-        klog.info("No boot info parsed - using VGA text driver", .{});
     }
-    arch.consoleClear();
 
     if (boot_info) |info| {
         klog.info("Multiboot2: mem_lower=%u KB, mem_upper=%u KB, mmap_entries=%u", .{
@@ -159,12 +154,18 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     heap.init();
     klog.info("Kernel heap: %u bytes available", .{heap.freeBytes()});
 
-    // Detect boot mode from multiboot2 command line
+    // Parse boot mode and desktop theme from multiboot2 command line
     const boot_mode: boot.BootMode = if (boot_info) |info| info.boot_mode else .normal;
+    const desktop_theme: boot.DesktopTheme = if (boot_info) |info| info.desktop_theme else .none;
+
     if (boot_mode == .cmd) {
         klog.info("Boot mode: CMD Shell (direct)", .{});
     } else if (boot_mode == .powershell) {
         klog.info("Boot mode: PowerShell (direct)", .{});
+    } else if (boot_mode == .desktop) {
+        klog.info("Boot mode: Desktop (theme=%s)", .{desktopThemeName(desktop_theme)});
+    } else {
+        klog.info("Boot mode: Normal", .{});
     }
 
     // ═══ Phase 2: Trap / Timer / Scheduler ═══
@@ -183,12 +184,15 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         arch.initKeyboard();
         klog.info("Keyboard: PS/2 driver initialized, IRQ1 unmasked", .{});
 
+        arch.initMouse();
+        klog.info("Mouse: PS/2 driver initialized, IRQ12 unmasked", .{});
+
         arch.enableInterrupts();
         klog.info("Interrupts enabled", .{});
     }
 
-    // ═══ Phase 3: VM + User Mode ═══
-    klog.info("--- Phase 3: VM + User Mode ---", .{});
+    // ═══ Phase 3: VM + Page Tables ═══
+    klog.info("--- Phase 3: VM + Page Tables ---", .{});
 
     var kernel_space = vm.createAddressSpace(&alloc) orelse {
         klog.err("Failed to create kernel address space", .{});
@@ -213,10 +217,10 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
 
     // Map framebuffer region if it lies outside the identity-mapped area
     if (boot_info) |binfo| {
-        if (binfo.fb_info) |fb| {
-            if (fb.fb_type != 2) {
-                const fb_base = @as(usize, @truncate(fb.addr)) & ~@as(usize, paging.page_size - 1);
-                const fb_size = @as(usize, fb.pitch) * @as(usize, fb.height);
+        if (binfo.fb_info) |fb_i| {
+            if (fb_i.fb_type != 2) {
+                const fb_base = @as(usize, @truncate(fb_i.addr)) & ~@as(usize, paging.page_size - 1);
+                const fb_size = @as(usize, fb_i.pitch) * @as(usize, fb_i.height);
                 const fb_end = fb_base + fb_size;
                 const id_limit = identity_pages * paging.page_size;
                 if (fb_base >= id_limit or fb_end > id_limit) {
@@ -262,21 +266,15 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     // ═══ Phase 6: I/O + File System + Driver ═══
     klog.info("--- Phase 6: I/O + File + Driver ---", .{});
 
-    const drivers = @import("drivers/mod.zig");
     drivers.init();
-
-    if (boot_info) |binfo| {
-        if (binfo.fb_info) |fb| {
-            if (fb.fb_type != 2 and fb.width > 0 and fb.height > 0 and fb.bpp > 0) {
-                const fb_addr_drv = @as(usize, @truncate(fb.addr));
-                drivers.initDesktopMode(fb_addr_drv, fb.width, fb.height, fb.pitch, fb.bpp);
-            }
-        }
-    }
+    drivers.initInputDrivers();
+    drivers.initAudioDrivers();
 
     vfs_mod.init();
     fat32_mod.init();
     ntfs_mod.init();
+
+    registry.init();
 
     klog.info("File Systems: FAT32 (C:\\) + NTFS (D:\\) mounted", .{});
     klog.info("VFS: %u mount points, %u open files", .{
@@ -320,8 +318,8 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         user32_mod.getClassCount(), gdi32_mod.getGdiObjectCount(),
     });
 
-    // ═══ Phase 11: WOW64 ═══
-    klog.info("--- Phase 11: WOW64 (32-bit Compatibility) ---", .{});
+    // ═══ Phase 11: WOW64 + Audio ═══
+    klog.info("--- Phase 11: WOW64 + Audio ---", .{});
 
     wow64_mod.init();
 
@@ -329,29 +327,90 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         wow64_mod.getThunkCount(),
     });
 
-    // ═══ Phase 12: Desktop Environment (Luna) ═══
-    klog.info("--- Phase 12: Desktop Environment ---", .{});
+    audio.init();
 
-    if (drivers.isDesktopReady()) {
-        klog.info("Desktop: Initializing Luna Blue desktop...", .{});
+    // ═══════════════════════════════════════════════════════
+    //  Stage B: All subsystems ready — now enter display
+    // ═══════════════════════════════════════════════════════
+    klog.info("--- Phase 12: Display Mode Selection ---", .{});
+    klog.info("All kernel subsystems initialized.", .{});
 
-        const display = drivers.video.display;
+    // Play startup sound event (queued for when audio hardware is available)
+    audio.playEvent(.startup);
 
-        display.renderLunaDesktop();
+    // ═══ Desktop / CMD / Text Mode Selection ═══
+    if (boot_mode == .desktop or (boot_mode == .normal and has_gfx_fb and desktop_theme != .none)) {
+        const theme_id: display.ThemeId = switch (desktop_theme) {
+            .classic => .classic,
+            .luna => .luna,
+            .aero => .aero,
+            .modern => .modern,
+            .fluent => .fluent,
+            .sunvalley => .sunvalley,
+            .none => .luna,
+        };
 
-        klog.info("Desktop: Luna Blue rendered successfully", .{});
+        klog.info("Desktop: Preparing %s theme...", .{desktopThemeName(desktop_theme)});
 
         arch.impl.framebuffer.setConsoleEnabled(false);
 
-        // Desktop idle loop - keep CPU in low-power state
-        // Serial logging remains active for diagnostics
-        while (true) {
-            arch.waitForInterrupt();
+        if (boot_info) |binfo| {
+            if (binfo.fb_info) |fb_i| {
+                if (fb_i.width > 0 and fb_i.height > 0 and fb_i.bpp > 0) {
+                    const fb_addr = @as(usize, @truncate(fb_i.addr));
+
+                    if (!arch.impl.framebuffer.isReady()) {
+                        arch.initFramebuffer(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp);
+                    }
+                    arch.impl.framebuffer.setConsoleEnabled(false);
+
+                    drivers.initDesktopMode(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp);
+                    display.clearFramebuffer();
+                }
+            }
+        }
+
+        display.setTheme(theme_id);
+
+        if (drivers.isDesktopReady()) {
+            klog.info("Desktop: Rendering %s theme", .{desktopThemeName(desktop_theme)});
+            display.renderDesktop();
+
+            const mouse = @import("drivers/input/mouse.zig");
+            while (true) {
+                var needs_redraw = false;
+
+                while (mouse.popEvent()) |event| {
+                    needs_redraw = true;
+
+                    if (event.buttons & 0x01 != 0) {
+                        display.handleClick(mouse.getX(), mouse.getY());
+                    }
+                }
+
+                if (needs_redraw) {
+                    display.renderDesktopFrame();
+                }
+
+                arch.waitForInterrupt();
+            }
+        } else {
+            klog.err("Desktop: Failed to initialize (isDesktopReady=false), falling back to text mode", .{});
         }
     }
 
+    // Non-desktop mode: now initialize the framebuffer console for text output
+    if (has_gfx_fb) {
+        if (boot_info) |binfo| {
+            if (binfo.fb_info) |fb_i| {
+                const fb_addr = @as(usize, @truncate(fb_i.addr));
+                arch.initFramebuffer(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp);
+            }
+        }
+        arch.consoleClear();
+    }
+
     // ═══ Text Mode Fallback ═══
-    klog.info("Desktop: No graphical framebuffer - text mode fallback", .{});
     klog.info("", .{});
     klog.info("=== ZirconOS v1.0 Kernel Ready ===", .{});
     klog.info("Architecture : x86_64", .{});
@@ -388,6 +447,18 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     cmd_mod.runInteractiveShell();
 }
 
+fn desktopThemeName(theme: @import("arch.zig").impl.boot.DesktopTheme) []const u8 {
+    return switch (theme) {
+        .none => "none",
+        .classic => "classic",
+        .luna => "luna",
+        .aero => "aero",
+        .modern => "modern",
+        .fluent => "fluent",
+        .sunvalley => "sunvalley",
+    };
+}
+
 fn startGeneric() noreturn {
     const boot = arch.impl.boot;
     const frame = @import("mm/frame.zig");
@@ -416,6 +487,8 @@ fn startGeneric() noreturn {
     const gdi32_mod = @import("subsystems/win32/gdi32.zig");
     const wow64_mod = @import("subsystems/win32/wow64.zig");
     const sys_config = @import("config/config.zig");
+    const audio = @import("drivers/audio/audio.zig");
+    const registry = @import("registry/registry.zig");
 
     arch.initSerial();
 
@@ -472,9 +545,13 @@ fn startGeneric() noreturn {
     klog.info("--- Phase 6: I/O + File + Driver ---", .{});
     const drivers_generic = @import("drivers/mod.zig");
     drivers_generic.init();
+    drivers_generic.initAudioDrivers();
     vfs_mod.init();
     fat32_mod.init();
     ntfs_mod.init();
+
+    registry.init();
+    klog.info("Registry: %u keys in 5 hives", .{registry.getKeyCount()});
 
     klog.info("--- Phase 7: Loader ---", .{});
     elf_loader.init();
@@ -496,8 +573,9 @@ fn startGeneric() noreturn {
     gdi32_mod.init();
     subsys.initGuiSubsystem();
 
-    klog.info("--- Phase 11: WOW64 ---", .{});
+    klog.info("--- Phase 11: WOW64 + Audio ---", .{});
     wow64_mod.init();
+    audio.init();
 
     klog.info("", .{});
     klog.info("=== ZirconOS v1.0 Kernel Ready (Phase 0-12) ===", .{});
@@ -507,6 +585,8 @@ fn startGeneric() noreturn {
     klog.info("Heap         : %u/%u bytes used", .{ heap.usedBytes(), heap.totalBytes() });
     klog.info("I/O Devices  : %u, Drivers: %u", .{ io.getDeviceCount(), io.getDriverCount() });
     klog.info("", .{});
+
+    audio.playEvent(.startup);
 
     cmd_mod.runBootSequence();
     ps_mod.runBootSequence();

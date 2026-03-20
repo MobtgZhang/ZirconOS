@@ -79,10 +79,21 @@ pub const FramebufferInfo = struct {
     fb_type: u8, // 0=indexed, 1=RGB, 2=EGA text
 };
 
+pub const DesktopTheme = enum {
+    none,
+    classic,
+    luna,
+    aero,
+    modern,
+    fluent,
+    sunvalley,
+};
+
 pub const BootMode = enum {
     normal,
     cmd,
     powershell,
+    desktop,
 };
 
 pub const BootInfo = struct {
@@ -94,6 +105,7 @@ pub const BootInfo = struct {
     cmdline_ptr: ?[*]const u8 = null,
     cmdline_len: usize = 0,
     boot_mode: BootMode = .normal,
+    desktop_theme: DesktopTheme = .none,
     fb_info: ?FramebufferInfo = null,
 
     pub fn getMmapEntry(self: BootInfo, i: usize) ?MmapEntry {
@@ -132,7 +144,9 @@ pub fn parse(phys_addr: usize) ?BootInfo {
                 if (str_len > 0) {
                     info.cmdline_ptr = @ptrFromInt(str_start);
                     info.cmdline_len = str_len;
-                    info.boot_mode = parseCmdlineBootMode(@as([*]const u8, @ptrFromInt(str_start))[0..str_len]);
+                    const cmdline = @as([*]const u8, @ptrFromInt(str_start))[0..str_len];
+                    info.boot_mode = parseCmdlineBootMode(cmdline);
+                    info.desktop_theme = parseCmdlineDesktop(cmdline);
                 }
             },
             .basic_meminfo => {
@@ -179,31 +193,57 @@ pub fn parse(phys_addr: usize) ?BootInfo {
     return info;
 }
 
-fn parseCmdlineBootMode(cmdline: []const u8) BootMode {
+fn parseCmdlineValue(cmdline: []const u8, key: []const u8) ?[]const u8 {
     var i: usize = 0;
-    while (i + 6 <= cmdline.len) {
-        if (cmdline[i] == 's' and i + 10 <= cmdline.len and
-            cmdline[i + 1] == 'h' and cmdline[i + 2] == 'e' and
-            cmdline[i + 3] == 'l' and cmdline[i + 4] == 'l' and
-            cmdline[i + 5] == '=')
-        {
-            const val_start = i + 6;
+    while (i + key.len + 1 <= cmdline.len) {
+        var match = true;
+        for (key, 0..) |ch, k| {
+            if (cmdline[i + k] != ch) {
+                match = false;
+                break;
+            }
+        }
+        if (match and cmdline[i + key.len] == '=') {
+            const val_start = i + key.len + 1;
             var val_end = val_start;
             while (val_end < cmdline.len and cmdline[val_end] != ' ' and cmdline[val_end] != 0) {
                 val_end += 1;
             }
-            const val = cmdline[val_start..val_end];
-            if (val.len == 3 and val[0] == 'c' and val[1] == 'm' and val[2] == 'd') {
-                return .cmd;
-            }
-            if (val.len == 10 and val[0] == 'p' and val[1] == 'o' and val[2] == 'w' and
-                val[3] == 'e' and val[4] == 'r' and val[5] == 's' and val[6] == 'h' and
-                val[7] == 'e' and val[8] == 'l' and val[9] == 'l')
-            {
-                return .powershell;
-            }
+            return cmdline[val_start..val_end];
         }
         i += 1;
     }
+    return null;
+}
+
+fn strEql(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |ca, cb| {
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
+fn parseCmdlineBootMode(cmdline: []const u8) BootMode {
+    if (parseCmdlineValue(cmdline, "shell")) |val| {
+        if (strEql(val, "cmd")) return .cmd;
+        if (strEql(val, "powershell")) return .powershell;
+    }
+    if (parseCmdlineValue(cmdline, "desktop")) |_| {
+        return .desktop;
+    }
     return .normal;
+}
+
+fn parseCmdlineDesktop(cmdline: []const u8) DesktopTheme {
+    if (parseCmdlineValue(cmdline, "desktop")) |val| {
+        if (strEql(val, "classic")) return .classic;
+        if (strEql(val, "luna")) return .luna;
+        if (strEql(val, "aero")) return .aero;
+        if (strEql(val, "modern")) return .modern;
+        if (strEql(val, "fluent")) return .fluent;
+        if (strEql(val, "sunvalley")) return .sunvalley;
+        return .luna;
+    }
+    return .none;
 }

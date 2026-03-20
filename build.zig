@@ -126,6 +126,8 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
 
     const desktop_all_step = b.step("desktop-all", "Build all desktop themes");
 
+    // Individual theme steps — NOT added to default install so that
+    // `zig build` works even when 3rdparty repos are not cloned.
     for (desktop_themes) |entry| {
         const src_path = b.fmt("{s}/src/main.zig", .{entry.dir});
         const root_path = b.fmt("{s}/src/root.zig", .{entry.dir});
@@ -146,14 +148,14 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
         });
         exe.root_module.addImport(entry.import_name, theme_mod);
 
-        b.installArtifact(exe);
+        const install_step = b.addInstallArtifact(exe, .{});
 
         const theme_step_name = b.fmt("desktop-{s}", .{entry.name});
         const theme_step_desc = b.fmt("Build {s} desktop theme", .{entry.name});
         const theme_step = b.step(theme_step_name, theme_step_desc);
-        theme_step.dependOn(&exe.step);
+        theme_step.dependOn(&install_step.step);
 
-        desktop_all_step.dependOn(&exe.step);
+        desktop_all_step.dependOn(&install_step.step);
     }
 
     const desktop_step = b.step("desktop", "Build selected desktop theme (use -Dtheme=NAME)");
@@ -179,8 +181,8 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
                 });
                 exe.root_module.addImport(entry.import_name, theme_mod);
 
-                b.installArtifact(exe);
-                desktop_step.dependOn(&exe.step);
+                const install_sel = b.addInstallArtifact(exe, .{});
+                desktop_step.dependOn(&install_sel.step);
                 break;
             }
         }

@@ -82,28 +82,28 @@ pub const PEB32 = struct {
     read_image_file_exec_options: u8 = 0,
     being_debugged: u8 = 0,
     spare_bool: u8 = 0,
-    mutant: u32 = 0xFFFFFFFF,
-    image_base_address: u32 = PE32_IMAGE_BASE,
+    mutant: u32 = 0,
+    image_base_address: u32 = 0,
     ldr: u32 = 0,
     process_parameters: u32 = 0,
     sub_system_data: u32 = 0,
     process_heap: u32 = 0,
     fast_peb_lock: u32 = 0,
-    os_major_version: u32 = 10,
+    os_major_version: u32 = 0,
     os_minor_version: u32 = 0,
-    os_build_number: u16 = 19041,
+    os_build_number: u16 = 0,
     os_csd_version: u16 = 0,
-    os_platform_id: u32 = 2,
-    image_subsystem: u32 = 3,
-    image_subsystem_major_version: u32 = 6,
+    os_platform_id: u32 = 0,
+    image_subsystem: u32 = 0,
+    image_subsystem_major_version: u32 = 0,
     image_subsystem_minor_version: u32 = 0,
-    number_of_processors: u32 = 1,
+    number_of_processors: u32 = 0,
     nt_global_flag: u32 = 0,
     session_id: u32 = 0,
 };
 
 pub const TEB32 = struct {
-    nt_tib_exception_list: u32 = 0xFFFFFFFF,
+    nt_tib_exception_list: u32 = 0,
     nt_tib_stack_base: u32 = 0,
     nt_tib_stack_limit: u32 = 0,
     nt_tib_sub_system_tib: u32 = 0,
@@ -119,7 +119,7 @@ pub const TEB32 = struct {
     last_error_value: u32 = 0,
     count_of_owned_critical_sections: u32 = 0,
     wow64_reserved: u32 = 0,
-    locale_id: u32 = 0x0409,
+    locale_id: u32 = 0,
     tls_slots: [WOW64_TLS_SLOTS]u32 = [_]u32{0} ** WOW64_TLS_SLOTS,
 };
 
@@ -136,7 +136,7 @@ pub const Wow64Process = struct {
     teb32: TEB32 = .{},
     image_name: [64]u8 = [_]u8{0} ** 64,
     image_name_len: usize = 0,
-    image_base: u32 = PE32_IMAGE_BASE,
+    image_base: u32 = 0,
     entry_point: u32 = 0,
     stack_base: u32 = 0,
     stack_limit: u32 = 0,
@@ -298,13 +298,22 @@ pub fn createWow64Process(name: []const u8, parent_pid: u32) ?*Wow64Process {
     proc.context.ebp = proc.stack_base;
 
     proc.peb32 = .{};
+    proc.peb32.mutant = 0xFFFFFFFF;
     proc.peb32.image_base_address = proc.image_base;
+    proc.peb32.os_major_version = 10;
+    proc.peb32.os_build_number = 19041;
+    proc.peb32.os_platform_id = 2;
+    proc.peb32.image_subsystem = 3;
+    proc.peb32.image_subsystem_major_version = 6;
+    proc.peb32.number_of_processors = 1;
 
     proc.teb32 = .{};
+    proc.teb32.nt_tib_exception_list = 0xFFFFFFFF;
     proc.teb32.process_id = proc.pid;
     proc.teb32.thread_id = proc.pid;
     proc.teb32.nt_tib_stack_base = proc.stack_base;
     proc.teb32.nt_tib_stack_limit = proc.stack_limit;
+    proc.teb32.locale_id = 0x0409;
 
     _ = subsystem.registerProcess(proc.pid, .win32_cui, name, parent_pid);
     _ = subsystem.connectProcess(proc.pid);

@@ -18,11 +18,15 @@ comptime {
     }
 }
 
+const debug_mode = @import("build_options").debug;
+
 pub fn consoleWrite(s: []const u8) void {
-    if (framebuffer.isReady()) {
-        framebuffer.write(s);
-    } else {
-        vga.write(s);
+    if (debug_mode) {
+        if (framebuffer.isReady()) {
+            framebuffer.write(s);
+        } else {
+            vga.write(s);
+        }
     }
     if (serial.isReady()) {
         serial.write(s);
@@ -58,8 +62,19 @@ pub fn initKeyboard() void {
     pic.unmaskIrq(1);
 }
 
+pub fn initMouse() void {
+    const mouse = @import("../../drivers/input/mouse.zig");
+    mouse.init();
+    pic.unmaskIrq(12);
+}
+
 pub fn handleKeyboardIrq() void {
     keyboard.handleIrq();
+}
+
+pub fn handleMouseIrq() void {
+    const mouse = @import("../../drivers/input/mouse.zig");
+    mouse.handleIrq();
 }
 
 pub fn readInputChar() ?u8 {

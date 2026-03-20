@@ -6,6 +6,7 @@ ARCH="${ARCH:-x86_64}"
 DEBUG="${DEBUG:-true}"
 ENABLE_IDT="${ENABLE_IDT:-true}"
 QEMU_MEM="${QEMU_MEM:-256M}"
+DESKTOP="${DESKTOP:-}"
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT_DIR/build"
@@ -31,6 +32,8 @@ OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 AAVMF_CODE="${AAVMF_CODE:-/usr/share/AAVMF/AAVMF_CODE.fd}"
 AAVMF_VARS="${AAVMF_VARS:-/usr/share/AAVMF/AAVMF_VARS.fd}"
 
+VALID_DESKTOPS="classic luna aero modern fluent sunvalley"
+
 info()  { echo -e "\033[1;32m[INFO]\033[0m $*"; }
 error() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
 
@@ -38,10 +41,232 @@ check_tool() {
     command -v "$1" >/dev/null 2>&1 || error "Missing tool: $1 ($2)"
 }
 
+validate_desktop() {
+    local dt="$1"
+    if [[ -z "$dt" ]]; then
+        return 0
+    fi
+    for valid in $VALID_DESKTOPS; do
+        if [[ "$dt" == "$valid" ]]; then
+            return 0
+        fi
+    done
+    error "Invalid desktop theme: $dt (valid: $VALID_DESKTOPS)"
+}
+
+# Generate grub.cfg with the selected desktop theme (if any).
+# If DESKTOP is set, the default menu entry boots into the specified desktop
+# theme so that the graphical desktop is shown automatically.
+generate_grub_cfg() {
+    local desktop_default=""
+    if [[ -n "$DESKTOP" ]]; then
+        desktop_default="$DESKTOP"
+    fi
+
+    cat > "$GRUB_DIR/grub.cfg" <<GRUBEOF
+# ZirconOS v${VERSION} GRUB Configuration (auto-generated)
+set timeout=10
+set timeout_style=menu
+set default=0
+
+set menu_color_normal=light-gray/black
+set menu_color_highlight=white/blue
+
+set gfxmode=auto
+insmod all_video
+insmod gfxterm
+
+if loadfont unicode ; then
+    terminal_output gfxterm
+elif loadfont ascii ; then
+    terminal_output gfxterm
+else
+    terminal_output console
+fi
+
+set gfxpayload=keep
+
+insmod multiboot2
+insmod part_gpt
+insmod part_msdos
+insmod ext2
+insmod fat
+insmod chain
+insmod ntfs
+
+if [ "\${grub_platform}" = "pc" ]; then
+    insmod biosdisk
+    insmod vbe
+fi
+
+if [ "\${grub_platform}" = "efi" ]; then
+    insmod efi_gop
+    insmod efi_uga
+fi
+
+GRUBEOF
+
+    # When a desktop theme is selected, the first entry boots into desktop mode
+    if [[ -n "$desktop_default" ]]; then
+        cat >> "$GRUB_DIR/grub.cfg" <<GRUBEOF
+# ═══ Default: Desktop Mode ($desktop_default) ═══
+
+menuentry "ZirconOS v${VERSION} — Desktop ($desktop_default) [Default]" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=$desktop_default
+    boot
+}
+
+GRUBEOF
+    else
+        cat >> "$GRUB_DIR/grub.cfg" <<GRUBEOF
+# ═══ Default: CMD Shell ═══
+
+GRUBEOF
+    fi
+
+    cat >> "$GRUB_DIR/grub.cfg" <<GRUBEOF
+menuentry "ZirconOS v${VERSION} — CMD Shell" {
+    multiboot2 /boot/kernel.elf -- console=serial,vga shell=cmd
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Normal Boot (Text)" {
+    multiboot2 /boot/kernel.elf
+    boot
+}
+
+# ═══ Desktop Themes ═══
+
+menuentry "ZirconOS v${VERSION} — Classic Desktop (Win2000)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=classic
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Luna Desktop (XP)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=luna
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Aero Desktop (7)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=aero
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Modern Desktop (8)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=modern
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Fluent Desktop (10)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=fluent
+    boot
+}
+
+menuentry "ZirconOS v${VERSION} — Sun Valley Desktop (11)" {
+    set gfxpayload=1024x768x32
+    multiboot2 /boot/kernel.elf -- desktop=sunvalley
+    boot
+}
+
+# ═══ Shell / Debug Modes ═══
+
+menuentry "ZirconOS v${VERSION} — Debug Mode (Serial + VGA)" {
+    multiboot2 /boot/kernel.elf -- console=serial,vga debug=1 verbose=1
+    boot
+}
+
+# ═══ Win32 Subsystem ═══
+
+submenu "Win32 Subsystem >" {
+
+    menuentry "CMD Shell Only" {
+        multiboot2 /boot/kernel.elf -- console=serial,vga shell=cmd
+        boot
+    }
+
+    menuentry "PowerShell Only" {
+        multiboot2 /boot/kernel.elf -- console=serial,vga shell=powershell
+        boot
+    }
+
+    menuentry "Full Demo (Phase 0-11)" {
+        multiboot2 /boot/kernel.elf -- console=serial,vga debug=1 win32=full gui=full wow64=full
+        boot
+    }
+
+    menuentry "Back to Main Menu" {
+        configfile /boot/grub/grub.cfg
+    }
+}
+
+# ═══ ZirconOS Boot Manager (ZBM) ═══
+
+submenu "ZirconOS Boot Manager (ZBM) >" {
+
+    if [ "\${grub_platform}" = "efi" ]; then
+        menuentry "ZBM — UEFI Boot Manager" {
+            chainloader /EFI/BOOT/BOOTX64.EFI
+        }
+    fi
+
+    if [ "\${grub_platform}" = "pc" ]; then
+        menuentry "ZBM — BIOS Boot Manager (Chainload MBR)" {
+            set root=(hd0)
+            chainloader +1
+        }
+    fi
+
+    menuentry "Back to Main Menu" {
+        configfile /boot/grub/grub.cfg
+    }
+}
+
+# ═══ Advanced Boot Options ═══
+
+submenu "Advanced Boot Options >" {
+
+    menuentry "Serial Debug Only" {
+        multiboot2 /boot/kernel.elf -- console=serial debug=1
+        boot
+    }
+
+    menuentry "Safe Mode (Minimal Modules)" {
+        multiboot2 /boot/kernel.elf -- safe_mode=1 debug=0 minimal=1
+        boot
+    }
+
+    menuentry "Release Build (Optimized)" {
+        multiboot2 /boot/kernel.elf -- debug=0 release=1
+        boot
+    }
+
+    menuentry "Back to Main Menu" {
+        configfile /boot/grub/grub.cfg
+    }
+}
+
+menuentry "Reboot" {
+    reboot
+}
+
+menuentry "Shutdown" {
+    halt
+}
+GRUBEOF
+}
+
 build_kernel() {
     local optimize="${1:-Debug}"
     local dbg="$DEBUG"
-    [[ "$optimize" == "ReleaseSafe" ]] && dbg="false"
+    if [[ "$optimize" == "ReleaseSafe" || "$optimize" == "ReleaseFast" || "$optimize" == "ReleaseSmall" ]]; then
+        dbg="false"
+    fi
 
     info "Building kernel (arch=$ARCH, optimize=$optimize, debug=$dbg, idt=$ENABLE_IDT)"
     check_tool zig "https://ziglang.org"
@@ -66,7 +291,7 @@ build_iso() {
     ARCH=x86_64 build_kernel "${1:-Debug}"
     mkdir -p "$GRUB_DIR" "$RELEASE_DIR"
     cp -f "$KERNEL_ELF" "$BOOT_DIR/kernel.elf"
-    cp -f "$ROOT_DIR/boot/grub/grub.cfg" "$GRUB_DIR/grub.cfg"
+    generate_grub_cfg
     grub-mkrescue -o "$ISO" "$ISO_DIR"
     info "Hybrid ISO built (BIOS+UEFI): $ISO"
 }
@@ -95,28 +320,23 @@ build_zbm_bios() {
     local ZBM_DIR="$TMP_DIR/zbm"
     mkdir -p "$ZBM_DIR"
 
-    # Assemble MBR (stage1)
     as --32 -o "$ZBM_DIR/mbr.o" "$ROOT_DIR/boot/zbm/bios/mbr.s"
     ld -m elf_i386 -T "$ROOT_DIR/link/mbr.ld" -o "$ZBM_DIR/mbr.bin" --oformat binary "$ZBM_DIR/mbr.o" 2>/dev/null || \
     objcopy -O binary "$ZBM_DIR/mbr.o" "$ZBM_DIR/mbr.bin"
-    # Ensure MBR is exactly 512 bytes
     truncate -s 512 "$ZBM_DIR/mbr.bin"
     info "MBR built: $ZBM_DIR/mbr.bin ($(stat -c%s "$ZBM_DIR/mbr.bin") bytes)"
 
-    # Assemble VBR
     as --32 -o "$ZBM_DIR/vbr.o" "$ROOT_DIR/boot/zbm/bios/vbr.s"
     ld -m elf_i386 -T "$ROOT_DIR/link/vbr.ld" -o "$ZBM_DIR/vbr.bin" --oformat binary "$ZBM_DIR/vbr.o" 2>/dev/null || \
     objcopy -O binary "$ZBM_DIR/vbr.o" "$ZBM_DIR/vbr.bin"
     truncate -s 512 "$ZBM_DIR/vbr.bin"
     info "VBR built: $ZBM_DIR/vbr.bin ($(stat -c%s "$ZBM_DIR/vbr.bin") bytes)"
 
-    # Assemble Stage2
     as --32 -o "$ZBM_DIR/stage2.o" "$ROOT_DIR/boot/zbm/bios/stage2.s"
     ld -m elf_i386 -T "$ROOT_DIR/link/zbm_bios.ld" -o "$ZBM_DIR/stage2.bin" --oformat binary "$ZBM_DIR/stage2.o" 2>/dev/null || \
     objcopy -O binary "$ZBM_DIR/stage2.o" "$ZBM_DIR/stage2.bin"
     info "Stage2 built: $ZBM_DIR/stage2.bin ($(stat -c%s "$ZBM_DIR/stage2.bin") bytes)"
 
-    # Build ZBM Zig library (common modules)
     cd "$ROOT_DIR"
     zig build zbm \
         -Doptimize=ReleaseSmall \
@@ -139,16 +359,11 @@ build_zbm_disk_image() {
     build_zbm_bios
     ARCH=x86_64 build_kernel "${1:-Debug}"
 
-    # ── MBR Disk Image ──
     info "Creating MBR disk image ($DISK_SIZE_MB MB)..."
     dd if=/dev/zero of="$DISK_MBR" bs=1M count=$DISK_SIZE_MB status=none
 
-    # Write MBR to first sector
     dd if="$ZBM_DIR/mbr.bin" of="$DISK_MBR" bs=512 count=1 conv=notrunc status=none
 
-    # Create a single bootable partition starting at sector 2048 (1MB aligned)
-    # Write partition table entry into MBR (bytes 446-461)
-    # Status=0x80 (active), Type=0xFE (ZirconOS), Start=2048, Size=rest
     local PART_START=2048
     local PART_SECTORS=$(( (DISK_SIZE_MB * 1024 * 1024 / 512) - PART_START ))
     python3 -c "
@@ -164,32 +379,19 @@ with open('$DISK_MBR', 'r+b') as f:
     f.write(entry)
 " 2>/dev/null || info "  (partition table written via dd)"
 
-    # Write VBR at partition start
     dd if="$ZBM_DIR/vbr.bin" of="$DISK_MBR" bs=512 seek=$PART_START count=1 conv=notrunc status=none
-
-    # Write stage2 at partition start + 1
     dd if="$ZBM_DIR/stage2.bin" of="$DISK_MBR" bs=512 seek=$((PART_START + 1)) conv=notrunc status=none
-
-    # Write kernel at partition start + 65 (after stage2)
     dd if="$KERNEL_ELF" of="$DISK_MBR" bs=512 seek=$((PART_START + 65)) conv=notrunc status=none
 
     info "MBR disk image built: $DISK_MBR"
 
-    # ── GPT Disk Image ──
     info "Creating GPT disk image ($DISK_SIZE_MB MB)..."
     if command -v sgdisk >/dev/null 2>&1; then
         dd if=/dev/zero of="$DISK_GPT" bs=1M count=$DISK_SIZE_MB status=none
-
-        # Create GPT with sgdisk
         sgdisk --clear "$DISK_GPT" >/dev/null 2>&1
-        # Partition 1: EFI System Partition (32MB)
         sgdisk -n 1:2048:67583 -t 1:EF00 -c 1:"EFI System" "$DISK_GPT" >/dev/null 2>&1
-        # Partition 2: ZirconOS System (rest)
         sgdisk -n 2:67584:0 -t 2:8300 -c 2:"ZirconOS System" "$DISK_GPT" >/dev/null 2>&1
-
-        # Write stage2 to known location (LBA 34, after GPT entries)
         dd if="$ZBM_DIR/stage2.bin" of="$DISK_GPT" bs=512 seek=34 conv=notrunc status=none
-
         info "GPT disk image built: $DISK_GPT"
     else
         info "  sgdisk not found, skipping GPT image (apt install gdisk)"
@@ -208,13 +410,26 @@ build_esp() {
     mmd -i "$ESP_IMG" ::/EFI
     mmd -i "$ESP_IMG" ::/EFI/BOOT
     mcopy -i "$ESP_IMG" "$UEFI_EFI" "::/EFI/BOOT/$efi_name"
-    # Also copy kernel to ESP for ZBM UEFI boot path
     ARCH=x86_64 build_kernel "${1:-Debug}" 2>/dev/null || true
     if [ -f "$KERNEL_ELF" ]; then
         mmd -i "$ESP_IMG" ::/boot 2>/dev/null || true
         mcopy -i "$ESP_IMG" "$KERNEL_ELF" "::/boot/kernel.elf" 2>/dev/null || true
     fi
     info "ESP image built: $ESP_IMG"
+}
+
+build_desktop_theme() {
+    local theme="${1:-classic}"
+    validate_desktop "$theme"
+    info "Building desktop theme: $theme"
+    check_tool zig "https://ziglang.org"
+    cd "$ROOT_DIR"
+    zig build "desktop-${theme}" \
+        -Doptimize=Debug \
+        -Dtheme="$theme" 2>/dev/null || \
+    zig build desktop \
+        -Dtheme="$theme"
+    info "Desktop theme built: $theme"
 }
 
 run_bios() {
@@ -328,9 +543,14 @@ run_zbm_uefi() {
 }
 
 run_desktop() {
+    local opt="${1:-Debug}"
+    local theme="${2:-${DESKTOP:-classic}}"
+    validate_desktop "$theme"
+    DESKTOP="$theme"
+
     check_tool qemu-system-x86_64 "apt install qemu-system-x86"
-    build_iso "${1:-Debug}"
-    info "Starting QEMU (x86_64 Desktop Mode, 1024x768x32)..."
+    build_iso "$opt"
+    info "Starting QEMU (x86_64 Desktop Mode: $theme, 1024x768x32, optimize=$opt)..."
     qemu-system-x86_64 \
         -m "${QEMU_MEM:-512M}" \
         -cdrom "$ISO" \
@@ -345,9 +565,13 @@ run_desktop() {
 }
 
 run_desktop_uefi() {
+    local theme="${2:-${DESKTOP:-classic}}"
+    validate_desktop "$theme"
+    DESKTOP="$theme"
+
     check_tool qemu-system-x86_64 "apt install qemu-system-x86"
     build_iso "${1:-Debug}"
-    info "Starting QEMU (x86_64 Desktop UEFI Mode)..."
+    info "Starting QEMU (x86_64 Desktop UEFI Mode: $theme)..."
     cp -f "$OVMF_VARS" "$TMP_DIR/OVMF_VARS.fd"
     qemu-system-x86_64 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -388,25 +612,41 @@ ZirconOS v${VERSION} Build & Run Script
 Usage: ./run.sh <command> [options]
 
 Commands:
-  build              Build kernel ELF (debug)
-  build-release      Build kernel ELF (release)
-  build-zbm          Build ZirconOS Boot Manager (BIOS components)
-  build-zbm-disk     Build ZBM disk images (MBR + GPT)
-  iso                Build bootable ISO (x86_64 BIOS, GRUB)
-  iso-release        Build bootable ISO (release, GRUB)
-  run                Run in QEMU (x86_64 BIOS/GRUB, debug)
-  run-release        Run in QEMU (x86_64 BIOS/GRUB, release)
-  run-debug          Run in QEMU with GDB server
-  run-desktop        Run in QEMU with Luna desktop (1024x768, VGA std)
-  run-desktop-uefi   Run in QEMU desktop mode via UEFI
-  run-zbm            Run in QEMU (ZBM BIOS/MBR Boot Manager)
-  run-zbm-uefi       Run in QEMU (ZBM UEFI/GPT Boot Manager)
-  run-aarch64        Run kernel in QEMU (aarch64 virt)
-  run-uefi           Run in QEMU (x86_64 UEFI/OVMF, with GRUB menu)
-  run-uefi-direct    Run in QEMU (x86_64 UEFI/OVMF, direct EFI app, no menu)
-  run-uefi-aarch64   Run in QEMU (aarch64 UEFI/AAVMF)
-  clean              Remove build artifacts
-  help               Show this message
+  build                       Build kernel ELF (debug)
+  build-release               Build kernel ELF (release)
+  build-zbm                   Build ZirconOS Boot Manager (BIOS components)
+  build-zbm-disk              Build ZBM disk images (MBR + GPT)
+  build-desktop [theme]       Build a desktop theme (default: classic)
+  iso                         Build bootable ISO (x86_64 BIOS, GRUB)
+  iso-release                 Build bootable ISO (release, GRUB)
+  run                         Run in QEMU (x86_64 BIOS/GRUB, debug)
+  run-release                 Run in QEMU (x86_64 BIOS/GRUB, release)
+  run-debug                   Run in QEMU with GDB server
+  run-desktop [theme]         Run with desktop (debug, screen+serial log)
+  run-desktop-release [theme] Run with desktop (release, serial log only)
+  run-desktop-uefi [theme]    Run desktop mode via UEFI
+  run-zbm                     Run in QEMU (ZBM BIOS/MBR Boot Manager)
+  run-zbm-uefi                Run in QEMU (ZBM UEFI/GPT Boot Manager)
+  run-aarch64                 Run kernel in QEMU (aarch64 virt)
+  run-uefi                    Run in QEMU (x86_64 UEFI/OVMF, with GRUB menu)
+  run-uefi-direct             Run in QEMU (x86_64 UEFI/OVMF, direct EFI app)
+  run-uefi-aarch64            Run in QEMU (aarch64 UEFI/AAVMF)
+  clean                       Remove build artifacts
+  help                        Show this message
+
+Desktop Themes:
+  classic      Windows 2000 Classic (default)
+  luna         Windows XP Luna Blue
+  aero         Windows Vista/7 Aero
+  modern       Windows 8 Metro
+  fluent       Windows 10 Fluent
+  sunvalley    Windows 11 Sun Valley
+
+Examples:
+  ./run.sh run-desktop luna         # Run with Luna desktop
+  ./run.sh run-desktop aero         # Run with Aero desktop
+  ./run.sh run-desktop modern       # Run with Modern desktop
+  DESKTOP=fluent ./run.sh run-desktop  # Via environment variable
 
 Boot Paths:
   GRUB (Legacy):     BIOS → GRUB → Multiboot2 → kernel.elf
@@ -420,28 +660,31 @@ Environment Variables:
   DEBUG=true|false        Enable debug logging (default: true)
   ENABLE_IDT=true|false   Enable IDT/syscall (default: true)
   QEMU_MEM=256M           QEMU memory size
+  DESKTOP=<theme>         Desktop theme name (overrides default)
 EOF
 }
 
 case "${1:-help}" in
-    build)             build_kernel "Debug" ;;
-    build-release)     build_kernel "ReleaseSafe" ;;
-    build-zbm)         build_zbm_bios ;;
-    build-zbm-disk)    build_zbm_disk_image "Debug" ;;
-    iso)               build_iso "Debug" ;;
-    iso-release)       build_iso "ReleaseSafe" ;;
-    run)               run_bios "Debug" ;;
-    run-release)       run_bios "ReleaseSafe" ;;
-    run-debug)         run_bios_debug ;;
-    run-desktop)       run_desktop "Debug" ;;
-    run-desktop-uefi)  run_desktop_uefi "Debug" ;;
-    run-zbm)           run_zbm_bios "Debug" ;;
-    run-zbm-uefi)      run_zbm_uefi "Debug" ;;
-    run-aarch64)       run_aarch64 ;;
-    run-uefi)          run_uefi_x86_64 "Debug" ;;
-    run-uefi-direct)   run_uefi_direct_x86_64 "Debug" ;;
-    run-uefi-aarch64)  run_uefi_aarch64 "Debug" ;;
-    clean)             do_clean ;;
-    help|--help|-h)    usage ;;
-    *)                 error "Unknown command: $1 (try './run.sh help')" ;;
+    build)                  build_kernel "Debug" ;;
+    build-release)          build_kernel "ReleaseSafe" ;;
+    build-zbm)              build_zbm_bios ;;
+    build-zbm-disk)         build_zbm_disk_image "Debug" ;;
+    build-desktop)          build_desktop_theme "${2:-classic}" ;;
+    iso)                    build_iso "Debug" ;;
+    iso-release)            build_iso "ReleaseSafe" ;;
+    run)                    run_bios "Debug" ;;
+    run-release)            run_bios "ReleaseSafe" ;;
+    run-debug)              run_bios_debug ;;
+    run-desktop)            run_desktop "Debug" "${2:-}" ;;
+    run-desktop-release)    run_desktop "ReleaseSafe" "${2:-}" ;;
+    run-desktop-uefi)       run_desktop_uefi "Debug" "${2:-}" ;;
+    run-zbm)                run_zbm_bios "Debug" ;;
+    run-zbm-uefi)           run_zbm_uefi "Debug" ;;
+    run-aarch64)            run_aarch64 ;;
+    run-uefi)               run_uefi_x86_64 "Debug" ;;
+    run-uefi-direct)        run_uefi_direct_x86_64 "Debug" ;;
+    run-uefi-aarch64)       run_uefi_aarch64 "Debug" ;;
+    clean)                  do_clean ;;
+    help|--help|-h)         usage ;;
+    *)                      error "Unknown command: $1 (try './run.sh help')" ;;
 esac

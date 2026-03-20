@@ -207,16 +207,16 @@ pub const PEB = struct {
     process_parameters: u64 = 0,
     ldr_data: u64 = 0,
     subsystem: u16 = 0,
-    os_major_version: u32 = 10,
+    os_major_version: u32 = 0,
     os_minor_version: u32 = 0,
-    os_build_number: u32 = 19041,
-    os_platform_id: u32 = 2,
-    number_of_processors: u32 = 1,
+    os_build_number: u32 = 0,
+    os_platform_id: u32 = 0,
+    number_of_processors: u32 = 0,
     session_id: u32 = 0,
     being_debugged: bool = false,
     nt_global_flag: u32 = 0,
-    image_subsystem: u16 = IMAGE_SUBSYSTEM_WINDOWS_CUI,
-    image_subsystem_major: u16 = 6,
+    image_subsystem: u16 = 0,
+    image_subsystem_major: u16 = 0,
     image_subsystem_minor: u16 = 0,
 };
 
@@ -231,7 +231,7 @@ pub const TEB = struct {
     last_status: i32 = 0,
     tls_slots: [64]u64 = [_]u64{0} ** 64,
     tls_expansion_slots: u64 = 0,
-    locale_id: u32 = 0x0409,
+    locale_id: u32 = 0,
 };
 
 pub const ProcessParameters = struct {
@@ -246,14 +246,14 @@ pub const ProcessParameters = struct {
     environment_ptr: u64 = 0,
     environment_size: u32 = 0,
     std_input: u64 = 0,
-    std_output: u64 = 1,
-    std_error: u64 = 2,
+    std_output: u64 = 0,
+    std_error: u64 = 0,
     window_title: [64]u8 = [_]u8{0} ** 64,
     window_title_len: usize = 0,
     desktop_info: [32]u8 = [_]u8{0} ** 32,
     desktop_info_len: usize = 0,
     flags: u32 = 0,
-    show_window: u16 = 1,
+    show_window: u16 = 0,
 };
 
 pub const LdrDataTableEntry = struct {
@@ -265,7 +265,7 @@ pub const LdrDataTableEntry = struct {
     base_dll_name: [64]u8 = [_]u8{0} ** 64,
     base_dll_name_len: usize = 0,
     flags: u32 = 0,
-    load_count: u16 = 1,
+    load_count: u16 = 0,
     tls_index: u16 = 0,
 };
 
@@ -312,7 +312,7 @@ pub const SectionInfo = struct {
 };
 
 pub const LoadedImage = struct {
-    header: ob.ObjectHeader = .{ .obj_type = .section },
+    header: ob.ObjectHeader = .{},
     image_base: u64 = 0,
     entry_point: u64 = 0,
     size_of_image: u32 = 0,
@@ -335,15 +335,15 @@ pub const LoadedImage = struct {
     params: ProcessParameters = .{},
     ldr_entry: LdrDataTableEntry = .{},
     characteristics: u16 = 0,
-    machine: u16 = 0x8664,
+    machine: u16 = 0,
     timestamp: u32 = 0,
     checksum: u32 = 0,
     dll_characteristics: u16 = 0,
-    stack_reserve: u64 = 0x100000,
-    stack_commit: u64 = 0x1000,
-    heap_reserve: u64 = 0x100000,
-    heap_commit: u64 = 0x1000,
-    ref_count: u32 = 1,
+    stack_reserve: u64 = 0,
+    stack_commit: u64 = 0,
+    heap_reserve: u64 = 0,
+    heap_commit: u64 = 0,
+    ref_count: u32 = 0,
     process_id: u32 = 0,
 
     pub fn getName(self: *const LoadedImage) []const u8 {

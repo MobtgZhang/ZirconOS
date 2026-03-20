@@ -1,8 +1,8 @@
 .{
     .name = .zirconos,
-    .fingerprint = 0xd481acc104ea43e0,
+    .fingerprint = 0xd481acc174905545,
     .version = "1.0.0",
-    .minimum_zig_version = "0.13.0",
+    .minimum_zig_version = "0.15.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",

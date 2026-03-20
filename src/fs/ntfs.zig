@@ -42,28 +42,28 @@ pub const FILE_ATTR_ARCHIVE: u32 = 0x0020;
 pub const FILE_ATTR_NORMAL: u32 = 0x0080;
 
 pub const NtfsBootSector = struct {
-    signature: [4]u8 = NTFS_SIGNATURE,
-    bytes_per_sector: u16 = SECTOR_SIZE,
-    sectors_per_cluster: u8 = @intCast(CLUSTER_SIZE / SECTOR_SIZE),
-    mft_cluster: u64 = 4,
+    signature: [4]u8 = .{ 0, 0, 0, 0 },
+    bytes_per_sector: u16 = 0,
+    sectors_per_cluster: u8 = 0,
+    mft_cluster: u64 = 0,
     mft_mirror_cluster: u64 = 0,
-    clusters_per_mft_record: i8 = -10,
-    clusters_per_index_record: i8 = -8,
-    volume_serial: u64 = 0x5A49524F4E4F5300,
+    clusters_per_mft_record: i8 = 0,
+    clusters_per_index_record: i8 = 0,
+    volume_serial: u64 = 0,
     total_sectors: u64 = 0,
 };
 
 pub const MftRecord = struct {
-    signature: [4]u8 = .{ 'F', 'I', 'L', 'E' },
+    signature: [4]u8 = .{ 0, 0, 0, 0 },
     record_number: u32 = 0,
     flags: u16 = 0,
-    sequence_number: u16 = 1,
+    sequence_number: u16 = 0,
     base_record: u32 = 0,
     file_name: [64]u8 = [_]u8{0} ** 64,
     file_name_len: usize = 0,
     file_size: u64 = 0,
     attributes: u32 = 0,
-    parent_record: u32 = MFT_RECORD_ROOT,
+    parent_record: u32 = 0,
     creation_time: u64 = 0,
     modification_time: u64 = 0,
     data_start_cluster: u32 = 0,
@@ -99,14 +99,21 @@ pub const NtfsVolume = struct {
     mft: [MAX_MFT_RECORDS]MftRecord = [_]MftRecord{.{}} ** MAX_MFT_RECORDS,
     mft_count: usize = 0,
     data_area: [MAX_DATA_SIZE]u8 = [_]u8{0} ** MAX_DATA_SIZE,
-    next_record: u32 = 16,
-    next_data_cluster: u32 = 64,
+    next_record: u32 = 0,
+    next_data_cluster: u32 = 0,
     is_mounted: bool = false,
     label: [32]u8 = [_]u8{0} ** 32,
     label_len: usize = 0,
 
     pub fn format(self: *NtfsVolume, label: []const u8) void {
         self.boot = .{};
+        self.boot.signature = NTFS_SIGNATURE;
+        self.boot.bytes_per_sector = SECTOR_SIZE;
+        self.boot.sectors_per_cluster = @intCast(CLUSTER_SIZE / SECTOR_SIZE);
+        self.boot.mft_cluster = 4;
+        self.boot.clusters_per_mft_record = -10;
+        self.boot.clusters_per_index_record = -8;
+        self.boot.volume_serial = 0x5A49524F4E4F5300;
         self.mft_count = 0;
         self.next_record = 16;
         self.next_data_cluster = 64;
@@ -130,6 +137,8 @@ pub const NtfsVolume = struct {
         for (system_names, 0..) |name, i| {
             var rec = &self.mft[i];
             rec.* = .{};
+            rec.signature = .{ 'F', 'I', 'L', 'E' };
+            rec.sequence_number = 1;
             rec.record_number = @intCast(i);
             rec.setInUse();
             rec.attributes = FILE_ATTR_HIDDEN | FILE_ATTR_SYSTEM;
@@ -149,6 +158,8 @@ pub const NtfsVolume = struct {
 
         var rec = &self.mft[self.mft_count];
         rec.* = .{};
+        rec.signature = .{ 'F', 'I', 'L', 'E' };
+        rec.sequence_number = 1;
         rec.record_number = self.next_record;
         self.next_record += 1;
         rec.setInUse();

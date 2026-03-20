@@ -111,6 +111,9 @@ fn handleIrq(frame: *InterruptFrame, irq: u8) void {
         1 => {
             arch.handleKeyboardIrq();
         },
+        12 => {
+            arch.handleMouseIrq();
+        },
         else => {},
     }
     arch.sendEoi(irq);

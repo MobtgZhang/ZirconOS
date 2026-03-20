@@ -30,7 +30,7 @@ pub const OBJ_FLAG_CASE_INSENSITIVE: u32 = 0x08;
 
 pub const ObjectHeader = struct {
     obj_type: ObjectType = .process,
-    ref_count: u32 = 1,
+    ref_count: u32 = 0,
     handle_count: u32 = 0,
     flags: u32 = 0,
     name_ptr: u64 = 0,
@@ -243,14 +243,14 @@ pub const NamespaceEntry = struct {
     name_len: usize = 0,
     obj_type: ObjectType = .directory,
     object_ptr: u64 = 0,
-    parent_idx: u32 = 0xFFFFFFFF,
+    parent_idx: u32 = 0,
 };
 
 var namespace: [MAX_NAMESPACE_ENTRIES]NamespaceEntry = [_]NamespaceEntry{.{}} ** MAX_NAMESPACE_ENTRIES;
 var namespace_count: usize = 0;
 
 pub fn initNamespace() void {
-    createNamespaceDir("\\", 0xFFFFFFFF);
+    createNamespaceDir("\\", 0);
     createNamespaceDir("\\ObjectTypes", 0);
     createNamespaceDir("\\Devices", 0);
     createNamespaceDir("\\Sessions", 0);

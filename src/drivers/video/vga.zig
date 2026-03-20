@@ -68,8 +68,8 @@ var current_pitch: u32 = 160;
 var current_fb: usize = VGA_TEXT_BUFFER;
 var is_text_mode: bool = true;
 
-var driver_idx: u32 = 0xFFFFFFFF;
-var device_idx: u32 = 0xFFFFFFFF;
+var driver_idx: u32 = 0;
+var device_idx: u32 = 0;
 var driver_initialized: bool = false;
 
 // ── IOCTL Codes (NT-style) ──

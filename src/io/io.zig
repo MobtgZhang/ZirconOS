@@ -56,6 +56,8 @@ pub const DeviceType = enum(u32) {
     filesystem = 5,
     network = 6,
     framebuffer = 7,
+    mouse = 8,
+    audio = 9,
 };
 
 pub const DeviceObject = struct {
@@ -65,7 +67,7 @@ pub const DeviceObject = struct {
     device_type: DeviceType = .unknown,
     flags: u32 = 0,
     driver_idx: u32 = 0,
-    attached_device: u32 = 0xFFFFFFFF,
+    attached_device: u32 = 0,
 };
 
 pub const DriverDispatchFn = *const fn (*Irp) IoStatus;

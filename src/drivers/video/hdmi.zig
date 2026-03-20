@@ -127,8 +127,8 @@ var outputs: [MAX_OUTPUTS]DisplayOutput = [_]DisplayOutput{.{}} ** MAX_OUTPUTS;
 var output_count: usize = 0;
 var primary_output: usize = 0;
 
-var driver_idx: u32 = 0xFFFFFFFF;
-var device_idx: u32 = 0xFFFFFFFF;
+var driver_idx: u32 = 0;
+var device_idx: u32 = 0;
 var driver_initialized: bool = false;
 
 // ── IOCTL Codes ──

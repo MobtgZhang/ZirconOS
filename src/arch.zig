@@ -80,9 +80,21 @@ pub fn initKeyboard() void {
     }
 }
 
+pub fn initMouse() void {
+    if (@hasDecl(impl, "initMouse")) {
+        impl.initMouse();
+    }
+}
+
 pub fn handleKeyboardIrq() void {
     if (@hasDecl(impl, "handleKeyboardIrq")) {
         impl.handleKeyboardIrq();
+    }
+}
+
+pub fn handleMouseIrq() void {
+    if (@hasDecl(impl, "handleMouseIrq")) {
+        impl.handleMouseIrq();
     }
 }
 

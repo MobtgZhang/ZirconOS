@@ -101,7 +101,7 @@ pub const Win32Process = struct {
     pid: u32 = 0,
     subsystem_type: SubsystemType = .unknown,
     state: ProcessSubsysState = .not_registered,
-    console_id: u32 = 0xFFFFFFFF,
+    console_id: u32 = 0,
     window_station_id: u32 = 0,
     desktop_id: u32 = 0,
     parent_pid: u32 = 0,
@@ -160,7 +160,7 @@ pub fn connectProcess(pid: u32) bool {
     const wp = findWin32Process(pid) orelse return false;
     wp.state = .connected;
 
-    if (wp.is_console_app and wp.console_id == 0xFFFFFFFF) {
+    if (wp.is_console_app and wp.console_id == 0) {
         if (console_mod.createConsole(pid, wp.getName())) |con| {
             wp.console_id = con.id;
         }
@@ -221,7 +221,7 @@ pub fn handleApiCall(api: CsrApiNumber, pid: u32, _: ?*const [ipc.MSG_DATA_SIZE]
         },
         .alloc_console => {
             const wp = findWin32Process(pid) orelse return -1;
-            if (wp.console_id == 0xFFFFFFFF) {
+            if (wp.console_id == 0) {
                 if (console_mod.createConsole(pid, wp.getName())) |con| {
                     wp.console_id = con.id;
                 }
@@ -230,7 +230,7 @@ pub fn handleApiCall(api: CsrApiNumber, pid: u32, _: ?*const [ipc.MSG_DATA_SIZE]
         },
         .free_console => {
             const wp = findWin32Process(pid) orelse return -1;
-            wp.console_id = 0xFFFFFFFF;
+            wp.console_id = 0;
             return 0;
         },
         .shutdown_system => {

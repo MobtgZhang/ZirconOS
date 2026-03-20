@@ -105,7 +105,7 @@ pub const FileObject = struct {
     access_mode: FileAccessMode = .read,
     position: u64 = 0,
     file_size: u64 = 0,
-    mount_idx: u32 = 0xFFFFFFFF,
+    mount_idx: u32 = 0,
     is_open: bool = false,
     fs_data: u64 = 0,
 };
@@ -115,7 +115,7 @@ pub const MountPoint = struct {
     prefix_len: usize = 0,
     fs_type: FsType = .unknown,
     ops: FsOps = .{},
-    device_idx: u32 = 0xFFFFFFFF,
+    device_idx: u32 = 0,
     is_active: bool = false,
     label: [16]u8 = [_]u8{0} ** 16,
     label_len: usize = 0,

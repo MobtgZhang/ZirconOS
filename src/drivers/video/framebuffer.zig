@@ -98,9 +98,10 @@ var fb_config: FramebufferConfig = .{};
 var back_buffer_addr: usize = 0;
 var back_buffer_size: usize = 0;
 
-var driver_idx: u32 = 0xFFFFFFFF;
-var device_idx: u32 = 0xFFFFFFFF;
+var driver_idx: u32 = 0;
+var device_idx: u32 = 0;
 var driver_initialized: bool = false;
+var config_ready: bool = false;
 var total_draw_calls: u64 = 0;
 var total_flips: u64 = 0;
 
@@ -561,6 +562,10 @@ pub fn getAddress() usize {
 }
 
 pub fn isInitialized() bool {
+    return config_ready;
+}
+
+pub fn isDriverRegistered() bool {
     return driver_initialized;
 }
 
@@ -585,13 +590,21 @@ pub fn init(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
         .double_buffer = false,
     };
 
+    config_ready = (addr != 0 and width > 0 and height > 0 and bpp > 0);
+
     driver_idx = io.registerDriver("\\Driver\\Framebuf", fbDispatch) orelse {
-        klog.err("Framebuffer: Failed to register driver", .{});
+        klog.err("Framebuffer: Failed to register IO driver (rendering still works)", .{});
+        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x", .{
+            width, height, bpp, pitch, addr,
+        });
         return;
     };
 
     device_idx = io.createDevice("\\Device\\Framebuf0", .framebuffer, driver_idx) orelse {
-        klog.err("Framebuffer: Failed to create device", .{});
+        klog.err("Framebuffer: Failed to create IO device (rendering still works)", .{});
+        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x", .{
+            width, height, bpp, pitch, addr,
+        });
         return;
     };
 
