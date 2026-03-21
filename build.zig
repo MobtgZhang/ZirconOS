@@ -33,9 +33,16 @@ pub fn build(b: *std.Build) void {
         .abi = .none,
     });
 
+    const desktop_default = b.option(
+        []const u8,
+        "default_desktop",
+        "Default desktop when cmdline omits desktop= (same as Makefile DESKTOP)",
+    ) orelse "sunvalley";
+
     const build_opts = b.addOptions();
     build_opts.addOption(bool, "debug", debug_mode);
     build_opts.addOption(bool, "enable_idt", enable_idt_opt);
+    build_opts.addOption([]const u8, "default_desktop", desktop_default);
 
     const code_model: std.builtin.CodeModel = switch (cpu_arch) {
         .x86_64 => .kernel,
@@ -124,10 +131,9 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
 
     const target = b.standardTargetOptions(.{});
 
-    const desktop_all_step = b.step("desktop-all", "Build all desktop themes");
+    const desktop_all_step = b.step("desktop-all", "Build all desktop themes (EXE + DLL)");
+    const dll_all_step = b.step("desktop-dll-all", "Build all desktop theme DLLs");
 
-    // Individual theme steps — NOT added to default install so that
-    // `zig build` works even when 3rdparty repos are not cloned.
     for (desktop_themes) |entry| {
         const src_path = b.fmt("{s}/src/main.zig", .{entry.dir});
         const root_path = b.fmt("{s}/src/root.zig", .{entry.dir});
@@ -138,6 +144,7 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
             .target = target,
         });
 
+        // EXE
         const exe = b.addExecutable(.{
             .name = exe_name,
             .root_module = b.createModule(.{
@@ -147,15 +154,51 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
             }),
         });
         exe.root_module.addImport(entry.import_name, theme_mod);
+        const install_exe = b.addInstallArtifact(exe, .{});
 
-        const install_step = b.addInstallArtifact(exe, .{});
+        // Static library (.lib)
+        const lib = b.addLibrary(.{
+            .name = exe_name,
+            .linkage = .static,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(root_path),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const install_lib = b.addInstallArtifact(lib, .{});
 
+        // DLL (shared library / PE DLL when targeting Windows)
+        const dll = b.addLibrary(.{
+            .name = exe_name,
+            .linkage = .dynamic,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(root_path),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        const install_dll = b.addInstallArtifact(dll, .{});
+
+        // Per-theme EXE step
         const theme_step_name = b.fmt("desktop-{s}", .{entry.name});
-        const theme_step_desc = b.fmt("Build {s} desktop theme", .{entry.name});
+        const theme_step_desc = b.fmt("Build {s} desktop theme (EXE + LIB + DLL)", .{entry.name});
         const theme_step = b.step(theme_step_name, theme_step_desc);
-        theme_step.dependOn(&install_step.step);
+        theme_step.dependOn(&install_exe.step);
+        theme_step.dependOn(&install_lib.step);
+        theme_step.dependOn(&install_dll.step);
 
-        desktop_all_step.dependOn(&install_step.step);
+        // Per-theme DLL-only step
+        const dll_step_name = b.fmt("desktop-{s}-dll", .{entry.name});
+        const dll_step_desc = b.fmt("Build {s} desktop DLL only", .{entry.name});
+        const dll_step = b.step(dll_step_name, dll_step_desc);
+        dll_step.dependOn(&install_dll.step);
+
+        desktop_all_step.dependOn(&install_exe.step);
+        desktop_all_step.dependOn(&install_lib.step);
+        desktop_all_step.dependOn(&install_dll.step);
+
+        dll_all_step.dependOn(&install_dll.step);
     }
 
     const desktop_step = b.step("desktop", "Build selected desktop theme (use -Dtheme=NAME)");
@@ -180,9 +223,32 @@ fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
                     }),
                 });
                 exe.root_module.addImport(entry.import_name, theme_mod);
+                const install_sel_exe = b.addInstallArtifact(exe, .{});
+                desktop_step.dependOn(&install_sel_exe.step);
 
-                const install_sel = b.addInstallArtifact(exe, .{});
-                desktop_step.dependOn(&install_sel.step);
+                const lib = b.addLibrary(.{
+                    .name = exe_name,
+                    .linkage = .static,
+                    .root_module = b.createModule(.{
+                        .root_source_file = b.path(root_path),
+                        .target = target,
+                        .optimize = optimize,
+                    }),
+                });
+                const install_sel_lib = b.addInstallArtifact(lib, .{});
+                desktop_step.dependOn(&install_sel_lib.step);
+
+                const dll = b.addLibrary(.{
+                    .name = exe_name,
+                    .linkage = .dynamic,
+                    .root_module = b.createModule(.{
+                        .root_source_file = b.path(root_path),
+                        .target = target,
+                        .optimize = optimize,
+                    }),
+                });
+                const install_sel_dll = b.addInstallArtifact(dll, .{});
+                desktop_step.dependOn(&install_sel_dll.step);
                 break;
             }
         }
@@ -241,11 +307,14 @@ fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin
         .abi = .none,
     });
 
+    const desktop_opt = b.option([]const u8, "desktop", "Desktop theme for UEFI boot entries") orelse "sunvalley";
+
     const uefi_opts = b.addOptions();
     uefi_opts.addOption(bool, "debug", debug_mode);
+    uefi_opts.addOption([]const u8, "desktop", desktop_opt);
 
     const uefi_mod = b.createModule(.{
-        .root_source_file = b.path("boot/uefi/main.zig"),
+        .root_source_file = b.path("boot/zbm/uefi/main.zig"),
         .target = uefi_target,
         .optimize = optimize,
     });
