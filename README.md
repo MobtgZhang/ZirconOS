@@ -15,7 +15,7 @@
 - **双文件系统**：FAT32 (系统分区) + NTFS (数据分区)
 - **多架构支持**：x86_64（主要）、aarch64、loong64、riscv64、mips64el
 
-设计文档：[`docs/README.md`](docs/README.md) | [`docs/refs.md`](docs/refs.md)
+设计文档：[`docs/README.md`](docs/README.md) | [`docs/Architecture.md`](docs/Architecture.md) | [`docs/Kernel.md`](docs/Kernel.md) | [`docs/Boot.md`](docs/Boot.md) | [`docs/BuildSystem.md`](docs/BuildSystem.md) | [`docs/Roadmap.md`](docs/Roadmap.md)
 
 ## 项目结构
 
