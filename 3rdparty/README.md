@@ -1,6 +1,6 @@
 # ZirconOS 桌面主题 (3rdparty)
 
-本目录包含 ZirconOS 操作系统的多个 **Windows 风格桌面环境** 实现。
+本目录包含 ZirconOS 操作系统的多个 **桌面环境主题** 实现。
 每个子项目是一个 **独立 Git 仓库**，构建前需克隆到 `3rdparty/<目录名>/`（与主仓库中的 `build.zig` 路径一致）。
 
 ### 一键拉取（推荐）
@@ -30,20 +30,20 @@ git submodule add https://github.com/MobtgZhang/ZirconOSLuna.git 3rdparty/Zircon
 
 ## 主题一览
 
-| 项目 | 对应 Windows 版本 | 设计风格 | 状态 | Git 克隆（HTTPS） |
-|------|-------------------|---------|------|-------------------|
-| [ZirconOSClassic](https://github.com/MobtgZhang/ZirconOSClassic/) | Windows 2000 / 经典主题 | 经典 3D 灰色按钮 + 直角窗口 | 框架 | `https://github.com/MobtgZhang/ZirconOSClassic.git` |
-| [ZirconOSLuna](https://github.com/MobtgZhang/ZirconOSLuna/) | Windows XP | Luna 主题（蓝/橄榄绿/银色三套配色） | **已实现** | `https://github.com/MobtgZhang/ZirconOSLuna.git` |
-| [ZirconOSAero](https://github.com/MobtgZhang/ZirconOSAero/) | Windows Vista / 7 | Aero 毛玻璃 + 透明边框 + Flip 3D | 框架 | `https://github.com/MobtgZhang/ZirconOSAero.git` |
-| [ZirconOSModern](https://github.com/MobtgZhang/ZirconOSModern/) | Windows 8 / 8.1 | Metro / Modern UI 扁平磁贴 | 框架 | `https://github.com/MobtgZhang/ZirconOSModern.git` |
-| [ZirconOSFluent](https://github.com/MobtgZhang/ZirconOSFluent/) | Windows 10 | Fluent Design + 亚克力材质 + 暗色模式 | 框架 | `https://github.com/MobtgZhang/ZirconOSFluent.git` |
-| [ZirconOSSunValley](https://github.com/MobtgZhang/ZirconOSSunValley/) | Windows 11 | Sun Valley + Mica 云母材质 + 大圆角 | 框架 | `https://github.com/MobtgZhang/ZirconOSSunValley.git` |
+| 项目 | 视觉风格 | 设计特点 | 状态 | Git 克隆（HTTPS） |
+|------|---------|---------|------|-------------------|
+| [ZirconOSClassic](https://github.com/MobtgZhang/ZirconOSClassic/) | Classic 经典 | 经典 3D 灰色按钮 + 直角窗口 + 16色图标 | **已实现** | `https://github.com/MobtgZhang/ZirconOSClassic.git` |
+| [ZirconOSLuna](https://github.com/MobtgZhang/ZirconOSLuna/) | Luna 风格 | Luna 主题（蓝/橄榄绿/银色三套配色）+ 3D彩色图标 | **已实现** | `https://github.com/MobtgZhang/ZirconOSLuna.git` |
+| [ZirconOSAero](https://github.com/MobtgZhang/ZirconOSAero/) | Aero 风格 | 毛玻璃 + 透明边框 + DWM 合成 | **已实现** | `https://github.com/MobtgZhang/ZirconOSAero.git` |
+| [ZirconOSModern](https://github.com/MobtgZhang/ZirconOSModern/) | Modern 风格 | 扁平磁贴 + 全屏应用视图 + 单色扁平图标 | **已实现** | `https://github.com/MobtgZhang/ZirconOSModern.git` |
+| [ZirconOSFluent](https://github.com/MobtgZhang/ZirconOSFluent/) | Fluent 风格 | 亚克力材质 + 深度阴影 + 明暗双模式 | **已实现** | `https://github.com/MobtgZhang/ZirconOSFluent.git` |
+| [ZirconOSSunValley](https://github.com/MobtgZhang/ZirconOSSunValley/) | SunValley 风格 | 云母材质 + 大圆角 + 居中任务栏 | **已实现** | `https://github.com/MobtgZhang/ZirconOSSunValley.git` |
 
 SSH 地址将 `https://github.com/` 换为 `git@github.com:`、末尾 `.git` 不变即可，例如  
 `git@github.com:MobtgZhang/ZirconOSLuna.git`。
 
-> **状态说明**：「已实现」表示具备完整桌面 Shell（登录、桌面、任务栏、开始菜单、窗口装饰、控件），
-> 「框架」表示已创建项目骨架，待按照 Luna 模板进行开发。
+> **状态说明**：「已实现」表示具备完整桌面 Shell（登录、桌面、任务栏、开始菜单、窗口装饰、控件）以及
+> 完整的构建支持（静态库 .lib / 动态链接库 .dll / 可执行程序 .exe）。
 
 ## 架构设计
 
@@ -60,7 +60,7 @@ ZirconOS<Theme>/
 │   ├── taskbar.zig           # 任务栏（开始按钮、快速启动、系统托盘、时钟）
 │   ├── startmenu.zig         # 开始菜单（程序列表、系统链接）
 │   ├── window_decorator.zig  # 窗口装饰器（标题栏、边框、控制按钮）
-│   ├── shell.zig             # 桌面 Shell 主程序（explorer.exe 风格）
+│   ├── shell.zig             # 桌面 Shell 主程序（桌面会话管理器）
 │   └── controls.zig          # 风格化 UI 控件（按钮、文本框、复选框等）
 ├── resources/                # 图形资源（壁纸、图标、UI 素材、光标）
 │   └── MANIFEST.md           # 资源清单
@@ -129,8 +129,33 @@ zig build
 5. 在 `resources/` 中添加主题资源文件
 6. 更新 `config/desktop.conf` 支持新主题名
 
+---
+
+## 开源字体
+
+本项目使用全套开源字体替代闭源字体依赖。字体文件位于 [`ZirconOSFonts/`](ZirconOSFonts/)。
+
+### 一键下载字体
+
+```bash
+./3rdparty/ZirconOSFonts/fetch-fonts.sh
+```
+
+### 中文字体对照
+
+| 闭源字体 | 开源替代 | 来源 |
+|----------|---------|------|
+| 宋体 (SimSun) | 思源宋体 (Noto Serif CJK SC) | [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk) |
+| 黑体 (SimHei) | 思源黑体 (Noto Sans CJK SC) | [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk) |
+| 楷体 (KaiTi) | 霞鹜文楷 (LXGW WenKai) | [lxgw/LxgwWenKai](https://github.com/lxgw/LxgwWenKai) |
+| 仿宋 (FangSong) | 朱雀仿宋 (ZhuQue FangSong) | [TrionesType/zhuque](https://github.com/TrionesType/zhuque) |
+
+详见 [ZirconOSFonts/README.md](ZirconOSFonts/README.md)。
+
 ## 参考
 
 - [ReactOS](https://github.com/reactos/reactos) — 开源 Windows 兼容操作系统
 - [Wine](https://www.winehq.org/) — Windows API 兼容层
 - Microsoft UX Guidelines — 各版本 Windows 视觉规范
+- [kiwi0fruit/open-fonts](https://github.com/kiwi0fruit/open-fonts) — 开源字体集合
+- [Google Noto Fonts](https://fonts.google.com/noto) — Google Noto 字体项目
