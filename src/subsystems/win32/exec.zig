@@ -269,7 +269,7 @@ pub fn runDemoApps() void {
     const ipconfig_result = createApp("ipconfig.exe", "ipconfig.exe /all", 4);
     if (ipconfig_result.app) |app| {
         if (console_mod.getConsole(app.console_id)) |con| {
-            con.writeLine("[ipconfig.exe] Windows IP Configuration");
+            con.writeLine("[ipconfig.exe] ZirconOS IP Configuration");
             con.writeLine("");
             con.writeLine("   Host Name . . . . . . . . : ZIRCONOS");
             con.writeLine("   Primary Dns Suffix  . . . :");

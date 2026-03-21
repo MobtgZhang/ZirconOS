@@ -1,5 +1,5 @@
 //! PowerShell - Advanced Command Shell
-//! Object-oriented command shell inspired by Windows PowerShell.
+//! Object-oriented command shell with cmdlet-based architecture.
 //! Supports cmdlets: Get-Process, Get-ChildItem, Get-Date, Get-Help,
 //! Set-Location, Write-Output, Clear-Host, Get-Service, etc.
 
@@ -13,7 +13,7 @@ const scheduler = @import("../../ke/scheduler.zig");
 const klog = @import("../../rtl/klog.zig");
 
 pub const PS_VERSION = "ZirconOS PowerShell";
-pub const PS_VERSION_FULL = "PowerShell 7.4.0 (ZirconOS)";
+pub const PS_VERSION_FULL = "ZirconOS PowerShell 1.0.0";
 pub const PS_COPYRIGHT = "Copyright (c) ZirconOS Project. All rights reserved.";
 
 const MAX_CMD_LEN: usize = 512;
@@ -72,7 +72,7 @@ pub const PowerShell = struct {
         self.setVariable("Host", "ZirconOS PowerShell Host", true, true);
         self.setVariable("HOME", "C:\\Users\\System", false, true);
         self.setVariable("PROFILE", "C:\\Users\\System\\profile.ps1", false, true);
-        self.setVariable("PSModulePath", "C:\\Windows\\System32\\WindowsPowerShell\\Modules", false, true);
+        self.setVariable("PSModulePath", "C:\\ZirconOS\\System32\\ZShell\\Modules", false, true);
         self.setVariable("true", "True", true, true);
         self.setVariable("false", "False", true, true);
         self.setVariable("null", "", true, true);

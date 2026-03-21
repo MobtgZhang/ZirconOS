@@ -1,5 +1,5 @@
 //! CMD.EXE - Command Prompt Shell
-//! Windows-compatible command interpreter with built-in commands.
+//! NT-compatible command interpreter with built-in commands.
 //! Supports: dir, cd, cls, echo, type, mkdir, del, ver, help, set, exit, etc.
 
 const console = @import("console.zig");
@@ -12,7 +12,7 @@ const process = @import("../../ps/process.zig");
 const klog = @import("../../rtl/klog.zig");
 const scheduler = @import("../../ke/scheduler.zig");
 
-pub const CMD_VERSION = "ZirconOS CMD [Version 10.0.19041.1]";
+pub const CMD_VERSION = "ZirconOS CMD [Version 1.0.0]";
 pub const COPYRIGHT = "(C) ZirconOS Project. All rights reserved.";
 
 const MAX_CMD_LEN: usize = 256;

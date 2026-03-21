@@ -1,6 +1,6 @@
 //! Console Runtime Subsystem
 //! Manages console windows, input/output buffers, and console API dispatch.
-//! Similar to Windows' conhost.exe / condrv.sys.
+//! Implements NT-compatible console hosting and driver model.
 
 const arch = @import("../../arch.zig");
 const klog = @import("../../rtl/klog.zig");

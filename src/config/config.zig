@@ -376,7 +376,7 @@ pub fn isShowDesktopIcons() bool {
 }
 
 pub fn getSystemFont() []const u8 {
-    return desktop_config.getOr("fonts", "system_font", "Tahoma");
+    return desktop_config.getOr("fonts", "system_font", "Liberation Sans");
 }
 
 pub fn getSystemFontSize() u64 {

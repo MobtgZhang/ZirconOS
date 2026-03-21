@@ -1,7 +1,7 @@
-//! Graphical Framebuffer Driver (NT-style)
+//! Graphical Framebuffer Driver
 //! Provides pixel-level drawing primitives, optimized bulk operations, and
-//! text rendering for the desktop compositor.
-//! Reference: ReactOS win32ss/drivers/displays/framebuf/
+//! text rendering for the ZirconOS desktop compositor.
+//! Original implementation by ZirconOS project.
 
 const io = @import("../../io/io.zig");
 const klog = @import("../../rtl/klog.zig");
@@ -171,6 +171,26 @@ pub fn getPixel32(x: u32, y: u32) u32 {
             if (bytes_pp == 4) (@as(u32, ptr[offset + 3]) << 24) else 0;
     }
     return 0;
+}
+
+/// Alpha-blend a single pixel at (x, y) with the given color and alpha.
+/// Used by material effects like Reveal Highlight.
+pub fn blendPixel(x: u32, y: u32, color: u32, alpha: u8) void {
+    if (x >= fb_config.width or y >= fb_config.height) return;
+    if (alpha == 0) return;
+    const existing = getPixel32(x, y);
+    const er: u32 = (existing >> 0) & 0xFF;
+    const eg: u32 = (existing >> 8) & 0xFF;
+    const eb: u32 = (existing >> 16) & 0xFF;
+    const cr: u32 = (color >> 0) & 0xFF;
+    const cg: u32 = (color >> 8) & 0xFF;
+    const cb: u32 = (color >> 16) & 0xFF;
+    const a: u32 = @intCast(alpha);
+    const inv: u32 = 255 - a;
+    const nr = (er * inv + cr * a) / 255;
+    const ng = (eg * inv + cg * a) / 255;
+    const nb = (eb * inv + cb * a) / 255;
+    putPixel32(x, y, nr | (ng << 8) | (nb << 16));
 }
 
 // ── Optimized Drawing Primitives ──
@@ -470,6 +490,174 @@ pub fn draw3DRect(x: i32, y: i32, w: i32, h: i32, highlight: u32, shadow: u32) v
     drawVLine(x, y, h, highlight);
     drawHLine(x, y + h - 1, w, shadow);
     drawVLine(x + w - 1, y, h, shadow);
+}
+
+// ── Aero Glass Blur (Multi-pass Box Blur) ──
+// Three passes of separable box blur approximate a Gaussian blur.
+// Operates directly on the framebuffer using a static line buffer.
+
+const BLUR_MAX_LINE: usize = 4096;
+var blur_buf_r: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
+var blur_buf_g: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
+var blur_buf_b: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
+
+pub fn boxBlurRect(x: i32, y: i32, w: i32, h: i32, radius: u32, passes: u32) void {
+    if (w <= 0 or h <= 0 or radius == 0 or passes == 0) return;
+    if (!config_ready) return;
+
+    const x0: u32 = if (x < 0) 0 else @intCast(x);
+    const y0: u32 = if (y < 0) 0 else @intCast(y);
+    const x1: u32 = @min(x0 + @as(u32, @intCast(w)), fb_config.width);
+    const y1: u32 = @min(y0 + @as(u32, @intCast(h)), fb_config.height);
+    if (x0 >= x1 or y0 >= y1) return;
+
+    const rw = x1 - x0;
+    const rh = y1 - y0;
+    if (rw > BLUR_MAX_LINE or rh > BLUR_MAX_LINE) return;
+
+    var pass: u32 = 0;
+    while (pass < passes) : (pass += 1) {
+        // Horizontal pass
+        var row: u32 = y0;
+        while (row < y1) : (row += 1) {
+            var col: u32 = x0;
+            while (col < x1) : (col += 1) {
+                const c = getPixel32(col, row);
+                const idx = col - x0;
+                blur_buf_r[idx] = c & 0xFF;
+                blur_buf_g[idx] = (c >> 8) & 0xFF;
+                blur_buf_b[idx] = (c >> 16) & 0xFF;
+            }
+            col = x0;
+            while (col < x1) : (col += 1) {
+                const idx = col - x0;
+                const lo = if (idx >= radius) idx - radius else 0;
+                const hi = @min(idx + radius + 1, rw);
+                const cnt = hi - lo;
+                var sr: u32 = 0;
+                var sg: u32 = 0;
+                var sb: u32 = 0;
+                var k: u32 = lo;
+                while (k < hi) : (k += 1) {
+                    sr += blur_buf_r[k];
+                    sg += blur_buf_g[k];
+                    sb += blur_buf_b[k];
+                }
+                putPixel32(col, row, (sr / cnt) | ((sg / cnt) << 8) | ((sb / cnt) << 16));
+            }
+        }
+
+        // Vertical pass
+        var col2: u32 = x0;
+        while (col2 < x1) : (col2 += 1) {
+            var row2: u32 = y0;
+            while (row2 < y1) : (row2 += 1) {
+                const c = getPixel32(col2, row2);
+                const idx = row2 - y0;
+                blur_buf_r[idx] = c & 0xFF;
+                blur_buf_g[idx] = (c >> 8) & 0xFF;
+                blur_buf_b[idx] = (c >> 16) & 0xFF;
+            }
+            row2 = y0;
+            while (row2 < y1) : (row2 += 1) {
+                const idx = row2 - y0;
+                const lo = if (idx >= radius) idx - radius else 0;
+                const hi = @min(idx + radius + 1, rh);
+                const cnt = hi - lo;
+                var sr: u32 = 0;
+                var sg: u32 = 0;
+                var sb: u32 = 0;
+                var k: u32 = lo;
+                while (k < hi) : (k += 1) {
+                    sr += blur_buf_r[k];
+                    sg += blur_buf_g[k];
+                    sb += blur_buf_b[k];
+                }
+                putPixel32(col2, row2, (sr / cnt) | ((sg / cnt) << 8) | ((sb / cnt) << 16));
+            }
+        }
+    }
+    total_draw_calls += 1;
+}
+
+/// Alpha-blend a tint color over a framebuffer rect with saturation control.
+pub fn blendTintRect(x: i32, y: i32, w: i32, h: i32, tint: u32, alpha: u8, saturation: u8) void {
+    if (w <= 0 or h <= 0) return;
+    if (!config_ready) return;
+
+    const x0: u32 = if (x < 0) 0 else @intCast(x);
+    const y0: u32 = if (y < 0) 0 else @intCast(y);
+    const x1: u32 = @min(x0 + @as(u32, @intCast(w)), fb_config.width);
+    const y1: u32 = @min(y0 + @as(u32, @intCast(h)), fb_config.height);
+    if (x0 >= x1 or y0 >= y1) return;
+
+    const tr: u32 = tint & 0xFF;
+    const tg: u32 = (tint >> 8) & 0xFF;
+    const tb: u32 = (tint >> 16) & 0xFF;
+    const a: u32 = @as(u32, alpha);
+    const inv_a: u32 = 255 - a;
+    const sat: u32 = @as(u32, saturation);
+
+    const bytes_pp = @as(u32, fb_config.bpp) / 8;
+    const ptr = getDrawBuffer();
+
+    var py: u32 = y0;
+    while (py < y1) : (py += 1) {
+        var px: u32 = x0;
+        while (px < x1) : (px += 1) {
+            const off = py * fb_config.pitch + px * bytes_pp;
+            var cr: u32 = @as(u32, ptr[off]);
+            var cg: u32 = @as(u32, ptr[off + 1]);
+            var cb: u32 = @as(u32, ptr[off + 2]);
+
+            const lum = (cr * 77 + cg * 150 + cb * 29) >> 8;
+            cr = (cr * sat + lum * (255 - sat)) / 255;
+            cg = (cg * sat + lum * (255 - sat)) / 255;
+            cb = (cb * sat + lum * (255 - sat)) / 255;
+
+            const out_r = (tr * a + cr * inv_a) / 255;
+            const out_g = (tg * a + cg * inv_a) / 255;
+            const out_b = (tb * a + cb * inv_a) / 255;
+
+            ptr[off] = @truncate(out_r);
+            ptr[off + 1] = @truncate(out_g);
+            ptr[off + 2] = @truncate(out_b);
+        }
+    }
+    total_draw_calls += 1;
+}
+
+/// Add a specular highlight (brightness boost that fades down) over a rect.
+pub fn addSpecularBand(x: i32, y: i32, w: i32, band_h: i32, intensity: u32) void {
+    if (w <= 0 or band_h <= 0) return;
+    if (!config_ready) return;
+
+    const x0: u32 = if (x < 0) 0 else @intCast(x);
+    const y0: u32 = if (y < 0) 0 else @intCast(y);
+    const x1: u32 = @min(x0 + @as(u32, @intCast(w)), fb_config.width);
+    const y1: u32 = @min(y0 + @as(u32, @intCast(band_h)), fb_config.height);
+    if (x0 >= x1 or y0 >= y1) return;
+
+    const bh = y1 - y0;
+    const bytes_pp = @as(u32, fb_config.bpp) / 8;
+    const ptr = getDrawBuffer();
+
+    var py: u32 = y0;
+    while (py < y1) : (py += 1) {
+        const t = py - y0;
+        const boost = intensity - (intensity * t / bh);
+
+        var px: u32 = x0;
+        while (px < x1) : (px += 1) {
+            const off = py * fb_config.pitch + px * bytes_pp;
+            const cr = @min(@as(u32, ptr[off]) + boost, 255);
+            const cg = @min(@as(u32, ptr[off + 1]) + boost, 255);
+            const cb = @min(@as(u32, ptr[off + 2]) + boost, 255);
+            ptr[off] = @truncate(cr);
+            ptr[off + 1] = @truncate(cg);
+            ptr[off + 2] = @truncate(cb);
+        }
+    }
 }
 
 // ── Buffer Management ──

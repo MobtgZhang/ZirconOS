@@ -1,5 +1,5 @@
 //! DiskPart - Disk Partition Utility
-//! Windows-compatible disk partitioning tool.
+//! NT-compatible disk partitioning tool.
 //! Supports: list disk/volume/partition, select, detail, create, delete,
 //! format, assign, clean, extend, shrink, active, inactive, etc.
 
@@ -9,7 +9,7 @@ const fat32 = @import("../../fs/fat32.zig");
 const ntfs = @import("../../fs/ntfs.zig");
 const klog = @import("../../rtl/klog.zig");
 
-pub const DISKPART_VERSION = "DiskPart version 10.0.19041.1";
+pub const DISKPART_VERSION = "DiskPart version 1.0.0 (ZirconOS)";
 pub const DISKPART_COPYRIGHT = "Copyright (C) ZirconOS Project.";
 
 const MAX_CMD_LEN: usize = 256;

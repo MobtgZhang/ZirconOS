@@ -154,9 +154,16 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     heap.init();
     klog.info("Kernel heap: %u bytes available", .{heap.freeBytes()});
 
-    // Parse boot mode and desktop theme from multiboot2 command line
+    // Parse boot mode and desktop theme from multiboot2 command line.
+    // When cmdline omits `desktop=`, use compile-time default (Makefile DESKTOP → zig -Ddesktop=).
     const boot_mode: boot.BootMode = if (boot_info) |info| info.boot_mode else .normal;
-    const desktop_theme: boot.DesktopTheme = if (boot_info) |info| info.desktop_theme else .none;
+    var desktop_theme: boot.DesktopTheme = if (boot_info) |info| info.desktop_theme else .none;
+    if (desktop_theme == .none) {
+        desktop_theme = desktopThemeFromBuildDefault(@import("build_options").default_desktop);
+    }
+    klog.info("Desktop: effective theme=%s (multiboot cmdline or -Ddefault_desktop)", .{
+        desktopThemeName(desktop_theme),
+    });
 
     if (boot_mode == .cmd) {
         klog.info("Boot mode: CMD Shell (direct)", .{});
@@ -165,7 +172,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     } else if (boot_mode == .desktop) {
         klog.info("Boot mode: Desktop (theme=%s)", .{desktopThemeName(desktop_theme)});
     } else {
-        klog.info("Boot mode: Normal", .{});
+        klog.info("Boot mode: Normal (default=fluent)", .{});
     }
 
     // ═══ Phase 2: Trap / Timer / Scheduler ═══
@@ -339,6 +346,9 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     audio.playEvent(.startup);
 
     // ═══ Desktop / CMD / Text Mode Selection ═══
+    // Default UEFI boot → Sun Valley Desktop with WinUI 3 composition layer,
+    // Mica material, Acrylic 2.0, SDF rounded corners, ZirconOSSunValley resources,
+    // ZirconOSFonts. Minimized Core, CMD, PowerShell windows on the taskbar.
     if (boot_mode == .desktop or (boot_mode == .normal and has_gfx_fb and desktop_theme != .none)) {
         const theme_id: display.ThemeId = switch (desktop_theme) {
             .classic => .classic,
@@ -347,7 +357,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
             .modern => .modern,
             .fluent => .fluent,
             .sunvalley => .sunvalley,
-            .none => .luna,
+            .none => .fluent,
         };
 
         klog.info("Desktop: Preparing %s theme...", .{desktopThemeName(desktop_theme)});
@@ -365,6 +375,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
                     arch.impl.framebuffer.setConsoleEnabled(false);
 
                     drivers.initDesktopMode(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp);
+                    display.syncCursorFromMouse();
                     display.clearFramebuffer();
                 }
             }
@@ -372,20 +383,79 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
 
         display.setTheme(theme_id);
 
+        // ── Per-Theme DWM Initialization (ReactOS NT6 session model) ──
+        // Each theme uses a different compositor backend:
+        //   Aero:       D3D9 redirected surface compositor (NT 6.1 / WDDM 1.1)
+        //   Fluent:     DirectComposition visual tree (NT 6.3 / WDDM 2.x)
+        //   SunValley:  WinUI 3 composition layer (NT 6.4 / WDDM 3.x)
+        //
+        // Initialization sequence mirrors ReactOS win32ss NtUserInitialize:
+        //   1. Create Win32k session context
+        //   2. Initialize DWM compositor for the target theme
+        //   3. Build visual tree (Fluent/SunValley only)
+        //   4. Register shell window classes
+
+        if (theme_id == .aero) {
+            display.initAeroDwm();
+            klog.info("Desktop: DWM Aero compositor initialized (glass+shadow+smooth_cursor)", .{});
+        }
+
+        if (theme_id == .fluent) {
+            display.initFluentDwm();
+            klog.info("Desktop: DWM Fluent compositor initialized (acrylic+reveal+dcomp_visual_tree)", .{});
+            klog.info("Desktop: Fluent resources: ZirconOSFluent + ZirconOSAero fallback", .{});
+            klog.info("Desktop: Fonts: ZirconOSFonts (NotoSans, SourceCodePro, NotoSansCJK)", .{});
+            klog.info("Desktop: OS interfaces: Core(min), CMD(min), PowerShell(min)", .{});
+        }
+
+        if (theme_id == .sunvalley) {
+            display.initSunValleyDwm();
+            klog.info("Desktop: DWM Sun Valley compositor initialized (mica+acrylic2+sdf_rounded+snap+visual_tree)", .{});
+            klog.info("Desktop: WinUI 3 Composition Layer (NT6.4 / WDDM 3.x)", .{});
+            klog.info("Desktop: Resources: ZirconOSSunValley (wallpapers+icons+cursors+themes)", .{});
+            klog.info("Desktop: Fonts: ZirconOSFonts (NotoSans, SourceCodePro, NotoSansCJK, LXGWWenKai)", .{});
+            klog.info("Desktop: Materials: Mica (wallpaper-sampled) + Acrylic 2.0 (luminosity blend)", .{});
+            klog.info("Desktop: Shell: Multi-process (Explorer, StartMenu, Widgets, QuickSettings)", .{});
+            klog.info("Desktop: OS interfaces: Core(min), CMD(min), PowerShell(min) on centered taskbar", .{});
+        }
+
         if (drivers.isDesktopReady()) {
             klog.info("Desktop: Rendering %s theme", .{desktopThemeName(desktop_theme)});
-            display.renderDesktop();
+
+            // Initial render uses the theme-specific entry point
+            switch (theme_id) {
+                .aero => display.renderAeroDesktop(),
+                .fluent => display.renderFluentDesktop(),
+                .sunvalley => display.renderSunValleyDesktop(),
+                else => display.renderDesktop(),
+            }
 
             const mouse = @import("drivers/input/mouse.zig");
+            var prev_buttons: u8 = 0;
+
             while (true) {
                 var needs_redraw = false;
 
                 while (mouse.popEvent()) |event| {
                     needs_redraw = true;
 
-                    if (event.buttons & 0x01 != 0) {
+                    const cur_buttons = event.buttons;
+
+                    display.handleMouseMove(mouse.getX(), mouse.getY());
+
+                    if (cur_buttons & 0x01 != 0 and prev_buttons & 0x01 == 0) {
                         display.handleClick(mouse.getX(), mouse.getY());
                     }
+
+                    if (cur_buttons & 0x01 == 0 and prev_buttons & 0x01 != 0) {
+                        display.handleMouseRelease();
+                    }
+
+                    if (cur_buttons & 0x02 != 0 and prev_buttons & 0x02 == 0) {
+                        display.handleRightClick(mouse.getX(), mouse.getY());
+                    }
+
+                    prev_buttons = cur_buttons;
                 }
 
                 if (needs_redraw) {
@@ -445,6 +515,17 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     klog.info("", .{});
 
     cmd_mod.runInteractiveShell();
+}
+
+fn desktopThemeFromBuildDefault(s: []const u8) @import("arch.zig").impl.boot.DesktopTheme {
+    if (std.mem.eql(u8, s, "none")) return .none;
+    if (std.mem.eql(u8, s, "classic")) return .classic;
+    if (std.mem.eql(u8, s, "luna")) return .luna;
+    if (std.mem.eql(u8, s, "aero")) return .aero;
+    if (std.mem.eql(u8, s, "modern")) return .modern;
+    if (std.mem.eql(u8, s, "fluent")) return .fluent;
+    if (std.mem.eql(u8, s, "sunvalley")) return .sunvalley;
+    return .sunvalley;
 }
 
 fn desktopThemeName(theme: @import("arch.zig").impl.boot.DesktopTheme) []const u8 {

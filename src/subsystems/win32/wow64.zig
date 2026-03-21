@@ -1,4 +1,4 @@
-//! WOW64 - Windows 32-bit on Windows 64-bit Compatibility Layer
+//! WOW64 - 32-bit on 64-bit Compatibility Layer
 //! Phase 11: PE32 loading, 32-bit syscall thunking, address space
 //! management, 32-bit ntdll/kernel32 shim, and compatibility testing.
 
@@ -423,7 +423,7 @@ pub fn runWow64Demo() void {
     if (calc) |proc| {
         if (console_mod.createConsole(proc.pid, proc.getName())) |con| {
             con.writeLine("");
-            con.writeLine("[WOW64] calc32.exe - 32-bit Windows Application");
+            con.writeLine("[WOW64] calc32.exe - 32-bit Application");
             con.writeLine("[WOW64] PE32 image loaded at 0x00400000");
             con.writeLine("[WOW64] 32-bit PEB/TEB initialized");
             con.writeLine("[WOW64] Syscall thunking active (32->64 bit)");

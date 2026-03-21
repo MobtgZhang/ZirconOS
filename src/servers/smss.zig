@@ -1,6 +1,6 @@
 //! Session Manager Subsystem (SMSS) - NT style
 //! Manages sessions, starts subsystem hosts (CSRSS), and manages the boot sequence.
-//! Similar to Windows' smss.exe.
+//! Implements the NT-style session manager process.
 
 const process = @import("../ps/process.zig");
 const ipc = @import("../lpc/ipc.zig");

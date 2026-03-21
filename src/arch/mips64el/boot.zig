@@ -7,6 +7,17 @@ pub const BootMode = enum {
     normal,
     cmd,
     powershell,
+    desktop,
+};
+
+pub const DesktopTheme = enum {
+    none,
+    classic,
+    luna,
+    aero,
+    modern,
+    fluent,
+    sunvalley,
 };
 
 pub const MmapEntryType = enum(u32) {
@@ -41,6 +52,7 @@ pub const BootInfo = struct {
     mmap_entry_count: usize = 1,
     mmap_entry_size: u32 = @sizeOf(MmapEntry),
     boot_mode: BootMode = .normal,
+    desktop_theme: DesktopTheme = .none,
     fb_info: ?FramebufferInfo = null,
 
     pub fn getMmapEntry(_: BootInfo, i: usize) ?MmapEntry {

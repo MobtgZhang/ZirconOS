@@ -1,12 +1,20 @@
-//! PS/2 Mouse Driver (NT-style)
+//! PS/2 Mouse Driver
 //! Handles PS/2 mouse input via IRQ12 (i8042 auxiliary port).
 //! Provides absolute/relative position tracking, button states,
-//! and a mouse event queue for the desktop compositor.
-//! Reference: OSDev PS/2 Mouse, ReactOS drivers/input/i8042prt/
+//! and a mouse event queue for the ZirconOS desktop compositor.
+//! Reference: OSDev PS/2 Mouse specification (public domain)
 
+const builtin = @import("builtin");
 const io = @import("../../io/io.zig");
 const klog = @import("../../rtl/klog.zig");
-const portio = @import("../../hal/x86_64/portio.zig");
+const portio = if (builtin.target.cpu.arch == .x86_64)
+    @import("../../hal/x86_64/portio.zig")
+else
+    struct {
+        pub fn outb(_: u16, _: u8) void {}
+        pub fn inb(_: u16) u8 { return 0; }
+        pub fn ioWait() void {}
+    };
 
 const KB_DATA_PORT: u16 = 0x60;
 const KB_STATUS_PORT: u16 = 0x64;
@@ -29,12 +37,29 @@ pub const MouseEvent = struct {
 pub const MouseState = struct {
     x: i32 = 0,
     y: i32 = 0,
+    raw_x: i32 = 0,
+    raw_y: i32 = 0,
+    sub_x: i32 = 0,
+    sub_y: i32 = 0,
+    velocity_x: i32 = 0,
+    velocity_y: i32 = 0,
+    prev_dx: i32 = 0,
+    prev_dy: i32 = 0,
     buttons: u8 = 0,
     left_pressed: bool = false,
     right_pressed: bool = false,
     middle_pressed: bool = false,
-    screen_width: i32 = 1024,
-    screen_height: i32 = 768,
+    screen_width: i32 = 1280,
+    screen_height: i32 = 800,
+    sensitivity: i32 = 10,
+    acceleration_enabled: bool = true,
+    acceleration_threshold: i32 = 6,
+    acceleration_curve: i32 = 3,
+    interpolation_enabled: bool = true,
+    interpolation_steps: u8 = 6,
+    interpolation_idx: u8 = 0,
+    smoothing_enabled: bool = true,
+    cursor_moved: bool = false,
 };
 
 const EVENT_QUEUE_SIZE: usize = 64;
@@ -133,15 +158,115 @@ pub fn handleIrq() void {
     mouse_state.right_pressed = (event.buttons & 0x02) != 0;
     mouse_state.middle_pressed = (event.buttons & 0x04) != 0;
 
-    mouse_state.x += @as(i32, event.dx);
-    mouse_state.y += @as(i32, event.dy);
+    var dx_scaled: i32 = @as(i32, event.dx);
+    var dy_scaled: i32 = @as(i32, event.dy);
 
+    // Multi-tier acceleration curve (enhanced pointer ballistics)
+    if (mouse_state.acceleration_enabled) {
+        const speed_sq = dx_scaled * dx_scaled + dy_scaled * dy_scaled;
+        const thresh = mouse_state.acceleration_threshold;
+        const thresh_sq = thresh * thresh;
+        if (speed_sq > thresh_sq * 4) {
+            // Very fast movement: 2x boost
+            dx_scaled = dx_scaled * 2;
+            dy_scaled = dy_scaled * 2;
+        } else if (speed_sq > thresh_sq) {
+            // Moderate movement: 1.5x boost
+            dx_scaled = dx_scaled + @divTrunc(dx_scaled, 2);
+            dy_scaled = dy_scaled + @divTrunc(dy_scaled, 2);
+        }
+    }
+
+    dx_scaled = @divTrunc(dx_scaled * mouse_state.sensitivity, 10);
+    dy_scaled = @divTrunc(dy_scaled * mouse_state.sensitivity, 10);
+
+    // Motion smoothing: blend with previous delta to reduce jitter
+    if (mouse_state.smoothing_enabled) {
+        dx_scaled = @divTrunc(dx_scaled * 3 + mouse_state.prev_dx, 4);
+        dy_scaled = @divTrunc(dy_scaled * 3 + mouse_state.prev_dy, 4);
+    }
+    mouse_state.prev_dx = dx_scaled;
+    mouse_state.prev_dy = dy_scaled;
+
+    mouse_state.velocity_x = dx_scaled;
+    mouse_state.velocity_y = dy_scaled;
+
+    if (mouse_state.interpolation_enabled and mouse_state.interpolation_steps > 1) {
+        mouse_state.raw_x += dx_scaled;
+        mouse_state.raw_y += dy_scaled;
+        clampRawPosition();
+
+        mouse_state.sub_x = @divTrunc(mouse_state.raw_x - mouse_state.x, mouse_state.interpolation_steps);
+        mouse_state.sub_y = @divTrunc(mouse_state.raw_y - mouse_state.y, mouse_state.interpolation_steps);
+        mouse_state.interpolation_idx = mouse_state.interpolation_steps;
+
+        interpolateStep();
+    } else {
+        mouse_state.x += dx_scaled;
+        mouse_state.y += dy_scaled;
+        mouse_state.raw_x = mouse_state.x;
+        mouse_state.raw_y = mouse_state.y;
+        clampPosition();
+    }
+
+    mouse_state.cursor_moved = true;
+    pushEvent(event);
+}
+
+fn clampPosition() void {
     if (mouse_state.x < 0) mouse_state.x = 0;
     if (mouse_state.y < 0) mouse_state.y = 0;
     if (mouse_state.x >= mouse_state.screen_width) mouse_state.x = mouse_state.screen_width - 1;
     if (mouse_state.y >= mouse_state.screen_height) mouse_state.y = mouse_state.screen_height - 1;
+}
 
-    pushEvent(event);
+fn clampRawPosition() void {
+    if (mouse_state.raw_x < 0) mouse_state.raw_x = 0;
+    if (mouse_state.raw_y < 0) mouse_state.raw_y = 0;
+    if (mouse_state.raw_x >= mouse_state.screen_width) mouse_state.raw_x = mouse_state.screen_width - 1;
+    if (mouse_state.raw_y >= mouse_state.screen_height) mouse_state.raw_y = mouse_state.screen_height - 1;
+}
+
+pub fn interpolateStep() void {
+    if (mouse_state.interpolation_idx == 0) return;
+
+    if (mouse_state.interpolation_idx == 1) {
+        mouse_state.x = mouse_state.raw_x;
+        mouse_state.y = mouse_state.raw_y;
+    } else {
+        mouse_state.x += mouse_state.sub_x;
+        mouse_state.y += mouse_state.sub_y;
+    }
+
+    clampPosition();
+    mouse_state.interpolation_idx -= 1;
+    mouse_state.cursor_moved = true;
+}
+
+pub fn isInterpolating() bool {
+    return mouse_state.interpolation_idx > 0;
+}
+
+pub fn hasCursorMoved() bool {
+    return mouse_state.cursor_moved;
+}
+
+pub fn clearCursorMoved() void {
+    mouse_state.cursor_moved = false;
+}
+
+pub fn setSensitivity(sens: i32) void {
+    mouse_state.sensitivity = if (sens < 1) 1 else if (sens > 20) 20 else sens;
+}
+
+pub fn setAcceleration(enabled: bool, threshold: i32) void {
+    mouse_state.acceleration_enabled = enabled;
+    mouse_state.acceleration_threshold = threshold;
+}
+
+pub fn setInterpolation(enabled: bool, steps: u8) void {
+    mouse_state.interpolation_enabled = enabled;
+    mouse_state.interpolation_steps = if (steps < 1) 1 else if (steps > 8) 8 else steps;
 }
 
 fn pushEvent(event: MouseEvent) void {
@@ -295,6 +420,8 @@ pub fn init() void {
 
     mouse_state.x = @divTrunc(mouse_state.screen_width, 2);
     mouse_state.y = @divTrunc(mouse_state.screen_height, 2);
+    mouse_state.raw_x = mouse_state.x;
+    mouse_state.raw_y = mouse_state.y;
 
     driver_idx = io.registerDriver("\\Driver\\Mouse", mouseDispatch) orelse {
         klog.err("Mouse: Failed to register driver", .{});

@@ -1,6 +1,6 @@
 //! ZirconOS Registry (NT-style)
 //! Provides a hierarchical key-value store for system and application settings.
-//! Modeled after the Windows NT Registry with hives:
+//! Modeled after the NT Registry with hives:
 //!   HKLM  - HKEY_LOCAL_MACHINE (hardware, drivers, system services)
 //!   HKCU  - HKEY_CURRENT_USER  (user preferences)
 //!   HKCR  - HKEY_CLASSES_ROOT  (file associations)

@@ -4,9 +4,21 @@
 //! Reference: Intel AC'97 Component Specification Rev 2.3,
 //!            ReactOS drivers/wdm/audio/backpln/portcls/
 
+const builtin = @import("builtin");
 const io = @import("../../io/io.zig");
 const klog = @import("../../rtl/klog.zig");
-const portio = @import("../../hal/x86_64/portio.zig");
+const portio = if (builtin.target.cpu.arch == .x86_64)
+    @import("../../hal/x86_64/portio.zig")
+else
+    struct {
+        pub fn outb(_: u16, _: u8) void {}
+        pub fn outw(_: u16, _: u16) void {}
+        pub fn outl(_: u16, _: u32) void {}
+        pub fn inb(_: u16) u8 { return 0; }
+        pub fn inw(_: u16) u16 { return 0; }
+        pub fn inl(_: u16) u32 { return 0; }
+        pub fn ioWait() void {}
+    };
 
 pub const AC97_VENDOR_ID: u16 = 0x8086;
 pub const AC97_DEVICE_ID: u16 = 0x2415;
