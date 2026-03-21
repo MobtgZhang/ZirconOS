@@ -451,7 +451,6 @@ enter_protected_mode:
 # ============================================================================
 .code32
 pm_entry:
-    # Set up data segments
     mov $0x10, %ax
     mov %ax, %ds
     mov %ax, %es
@@ -460,60 +459,161 @@ pm_entry:
     mov %ax, %ss
     mov $0x7C00, %esp
 
-    # ── Load kernel from disk to KERNEL_PHYS (1MB) ──
-    # Use direct port I/O to ATA (PIO mode) to read kernel sectors
-    # The kernel starts at a known disk offset (partition start + 65 sectors)
-
-    # For now: display PM banner on VGA
+    # Display PM status on VGA row 20
     movl $VGA_TEXT_BASE, %edi
-    # Row 24 (offset = 24 * 160 = 3840)
-    addl $3840, %edi
-    movl $pm_ready_msg, %esi
-    movb $0x0A, %ah                 # Green on black
-
-.pm_print:
+    addl $(20 * 160), %edi
+    movl $pm_msg_loading, %esi
+    movb $0x0A, %ah
+.pm_print_load:
     lodsb
     test %al, %al
-    jz .pm_print_done
+    jz .pm_print_load_done
     stosw
-    jmp .pm_print
-.pm_print_done:
+    jmp .pm_print_load
+.pm_print_load_done:
 
-    # ── Build minimal Multiboot2-like info structure ──
-    # Place at 0x9000 (below stage2)
+    # ── Load kernel from disk via ATA PIO ──
+    # Kernel starts at partition_start + 65 sectors on the disk image.
+    # The partition start LBA was stored at a known location by stage2 init.
+    # For ZBM disk images, kernel is at sector 2113 (2048 + 65).
+    movl $KERNEL_PHYS, %edi         # Destination: 1MB
+    movl $2113, %ebx                # Starting LBA (partition_start + 65)
+    movl $512, %ecx                 # Read 512 sectors (256KB, enough for kernel)
+    call ata_pio_read_sectors
+
+    # Verify ELF magic at 1MB
+    cmpl $0x464C457F, (KERNEL_PHYS) # "\x7FELF"
+    jne .pm_no_kernel
+
+    # Display success on VGA row 21
+    movl $VGA_TEXT_BASE, %edi
+    addl $(21 * 160), %edi
+    movl $pm_msg_ok, %esi
+    movb $0x0A, %ah
+.pm_print_ok:
+    lodsb
+    test %al, %al
+    jz .pm_print_ok_done
+    stosw
+    jmp .pm_print_ok
+.pm_print_ok_done:
+
+    # ── Select command line based on menu choice ──
+    xor %eax, %eax
+    movb (selected_entry), %al
+    cmpl $1, %eax
+    je .use_cmdline_debug
+    cmpl $2, %eax
+    je .use_cmdline_safe
+    cmpl $3, %eax
+    je .use_cmdline_recovery
+    cmpl $4, %eax
+    je .use_cmdline_lastgood
+    movl $cmdline_default, %esi
+    jmp .build_bootinfo
+.use_cmdline_debug:
+    movl $cmdline_debug, %esi
+    jmp .build_bootinfo
+.use_cmdline_safe:
+    movl $cmdline_safe, %esi
+    jmp .build_bootinfo
+.use_cmdline_recovery:
+    movl $cmdline_recovery, %esi
+    jmp .build_bootinfo
+.use_cmdline_lastgood:
+    movl $cmdline_lastgood, %esi
+
+.build_bootinfo:
+    # Save selected cmdline pointer
+    movl %esi, (pm_cmdline_ptr)
+
+    # ── Build Multiboot2-compatible info structure at 0x9000 ──
     movl $0x9000, %edi
 
-    # Total size (placeholder, patched later)
+    # Header: total_size (patched later) + reserved
     movl $0, (%edi)
-    movl $0, 4(%edi)                # Reserved
+    movl $0, 4(%edi)
     addl $8, %edi
 
-    # Tag: basic memory info (type=4, size=16)
-    movl $4, (%edi)                 # type
-    movl $16, 4(%edi)               # size
-    movl $640, 8(%edi)              # mem_lower (640 KB)
-    movl $0, %eax
-    movw (E820_BUF), %ax            # E820 entry count
-    # Estimate upper memory from E820
-    movl $131072, 12(%edi)          # mem_upper (~128MB default)
-    addl $16, %edi
+    # Tag: boot loader name (type=2)
+    movl $2, (%edi)                 # type
+    movl $pm_bootloader_name, %esi
+    call strlen32
+    addl $9, %eax                   # 8 + strlen + 1 (null)
+    movl %eax, 4(%edi)              # size
+    addl $8, %edi
+    movl $pm_bootloader_name, %esi
+.copy_blname:
+    lodsb
+    stosb
+    test %al, %al
+    jnz .copy_blname
+    # Align EDI to 8
+    addl $7, %edi
+    andl $0xFFFFFFF8, %edi
 
     # Tag: command line (type=1)
     movl $1, (%edi)                 # type
-    # Size = 8 + string length + 1 (null)
-    movl $cmdline_default, %esi
+    movl (pm_cmdline_ptr), %esi
     call strlen32
-    addl $9, %eax                   # 8 (header) + len + 1 (null)
-    andl $0xFFFFFFF8, %eax          # Align to 8
-    addl $8, %eax
+    addl $9, %eax
     movl %eax, 4(%edi)
     addl $8, %edi
-    movl $cmdline_default, %esi
+    movl (pm_cmdline_ptr), %esi
 .copy_cmdline:
     lodsb
     stosb
     test %al, %al
     jnz .copy_cmdline
+    addl $7, %edi
+    andl $0xFFFFFFF8, %edi
+
+    # Tag: basic memory info (type=4, size=16)
+    movl $4, (%edi)                 # type
+    movl $16, 4(%edi)               # size
+    movl $640, 8(%edi)              # mem_lower (640 KB)
+    # Compute mem_upper from E820 map
+    call compute_mem_upper
+    movl %eax, 12(%edi)
+    addl $16, %edi
+
+    # Tag: memory map (type=6)
+    # Convert E820 entries to Multiboot2 mmap format
+    movl $6, (%edi)                 # type
+    movl %edi, %ebp                 # save tag start for size patching
+    addl $8, %edi
+    movl $24, (%edi)                # entry_size
+    movl $0, 4(%edi)                # entry_version
+    addl $8, %edi
+
+    xor %ecx, %ecx
+    movw (E820_BUF), %cx            # E820 entry count
+    test %ecx, %ecx
+    jz .mmap_done
+    movl $(E820_BUF + 4), %esi      # pointer to first E820 entry
+.mmap_copy_loop:
+    # E820 entry: base(8) + length(8) + type(4) + ext_attr(4) = 24 bytes
+    # Multiboot2 mmap entry: base(8) + length(8) + type(4) + reserved(4) = 24 bytes
+    movl 0(%esi), %eax
+    movl %eax, 0(%edi)              # base_addr low
+    movl 4(%esi), %eax
+    movl %eax, 4(%edi)              # base_addr high
+    movl 8(%esi), %eax
+    movl %eax, 8(%edi)              # length low
+    movl 12(%esi), %eax
+    movl %eax, 12(%edi)             # length high
+    movl 16(%esi), %eax
+    movl %eax, 16(%edi)             # type
+    movl $0, 20(%edi)               # reserved
+    addl $24, %esi
+    addl $24, %edi
+    dec %ecx
+    jnz .mmap_copy_loop
+.mmap_done:
+    # Patch mmap tag size
+    movl %edi, %eax
+    subl %ebp, %eax
+    movl %eax, 4(%ebp)
     # Align EDI to 8
     addl $7, %edi
     andl $0xFFFFFFF8, %edi
@@ -523,19 +623,170 @@ pm_entry:
     movl $8, 4(%edi)
     addl $8, %edi
 
-    # Patch total size
+    # Patch total size in header
     movl %edi, %eax
     subl $0x9000, %eax
     movl %eax, (0x9000)
 
-    # ── Jump to kernel at 1MB ──
-    # EAX = Multiboot2 magic
-    # EBX = pointer to boot info
-    movl $0x36D76289, %eax          # Multiboot2 bootloader magic
-    movl $0x9000, %ebx
-    jmp *$KERNEL_PHYS
+    # Display jump message on VGA row 22
+    movl $VGA_TEXT_BASE, %edi
+    addl $(22 * 160), %edi
+    movl $pm_msg_jump, %esi
+    movb $0x0E, %ah
+.pm_print_jump:
+    lodsb
+    test %al, %al
+    jz .pm_print_jump_done
+    stosw
+    jmp .pm_print_jump
+.pm_print_jump_done:
 
-# ── strlen32: ESI = string, returns EAX = length ──
+    # ── Jump to kernel at 1MB ──
+    # EAX = Multiboot2 bootloader magic
+    # EBX = physical address of boot info structure
+    movl $0x36D76289, %eax
+    movl $0x9000, %ebx
+    movl $KERNEL_PHYS, %ecx
+    jmp *%ecx
+
+.pm_no_kernel:
+    movl $VGA_TEXT_BASE, %edi
+    addl $(21 * 160), %edi
+    movl $pm_msg_err, %esi
+    movb $0x4F, %ah                 # White on red
+.pm_print_err:
+    lodsb
+    test %al, %al
+    jz .pm_halt
+    stosw
+    jmp .pm_print_err
+.pm_halt:
+    hlt
+    jmp .pm_halt
+
+# ── ATA PIO Read Sectors (32-bit protected mode) ──
+# EDI = destination buffer, EBX = starting LBA, ECX = sector count
+ata_pio_read_sectors:
+    pushl %ebp
+    movl %ecx, %ebp                 # save total sector count
+
+.ata_read_loop:
+    test %ebp, %ebp
+    jz .ata_read_done
+
+    # Wait for drive ready
+    call ata_wait_ready
+
+    # Select drive 0 + LBA mode + LBA bits 24-27
+    movl %ebx, %eax
+    shrl $24, %eax
+    andl $0x0F, %eax
+    orl $0xE0, %eax
+    movw $0x1F6, %dx
+    outb %al, %dx
+
+    # Sector count = 1
+    movw $0x1F2, %dx
+    movb $1, %al
+    outb %al, %dx
+
+    # LBA low byte
+    movl %ebx, %eax
+    movw $0x1F3, %dx
+    outb %al, %dx
+
+    # LBA mid byte
+    movl %ebx, %eax
+    shrl $8, %eax
+    movw $0x1F4, %dx
+    outb %al, %dx
+
+    # LBA high byte
+    movl %ebx, %eax
+    shrl $16, %eax
+    movw $0x1F5, %dx
+    outb %al, %dx
+
+    # Command: READ SECTORS (0x20)
+    movw $0x1F7, %dx
+    movb $0x20, %al
+    outb %al, %dx
+
+    # Wait for data ready
+    call ata_wait_data
+
+    # Read 256 words (512 bytes)
+    movl $256, %ecx
+    movw $0x1F0, %dx
+    rep insw
+
+    incl %ebx                       # next LBA
+    decl %ebp                       # decrement remaining
+    jmp .ata_read_loop
+
+.ata_read_done:
+    popl %ebp
+    ret
+
+# Wait for BSY=0 and DRDY=1
+ata_wait_ready:
+    movw $0x1F7, %dx
+.awr_loop:
+    inb %dx, %al
+    testb $0x80, %al                # BSY?
+    jnz .awr_loop
+    testb $0x40, %al                # DRDY?
+    jz .awr_loop
+    ret
+
+# Wait for BSY=0 and DRQ=1
+ata_wait_data:
+    movw $0x1F7, %dx
+.awd_loop:
+    inb %dx, %al
+    testb $0x80, %al                # BSY?
+    jnz .awd_loop
+    testb $0x08, %al                # DRQ?
+    jz .awd_loop
+    ret
+
+# Compute upper memory (KB above 1MB) from E820 map
+# Returns result in EAX
+compute_mem_upper:
+    push %esi
+    push %ecx
+    xor %eax, %eax                  # accumulator
+    xor %ecx, %ecx
+    movw (E820_BUF), %cx
+    test %ecx, %ecx
+    jz .cmu_default
+    movl $(E820_BUF + 4), %esi
+.cmu_loop:
+    # Only count type=1 (available) regions above 1MB
+    cmpl $1, 16(%esi)
+    jne .cmu_next
+    cmpl $0, 4(%esi)                # base_addr high > 0 => above 4GB, skip
+    jne .cmu_next
+    cmpl $0x100000, 0(%esi)         # base >= 1MB?
+    jb .cmu_next
+    # Add length (low 32 bits) in KB
+    movl 8(%esi), %edx
+    shrl $10, %edx                  # bytes -> KB
+    addl %edx, %eax
+.cmu_next:
+    addl $24, %esi
+    dec %ecx
+    jnz .cmu_loop
+    test %eax, %eax
+    jnz .cmu_ret
+.cmu_default:
+    movl $131072, %eax              # default 128MB
+.cmu_ret:
+    pop %ecx
+    pop %esi
+    ret
+
+# strlen32: ESI = null-terminated string, returns EAX = length
 strlen32:
     push %esi
     xor %eax, %eax
@@ -563,6 +814,10 @@ selected_entry:
     .byte 0
 countdown:
     .byte 10
+
+# ── Protected mode data ──
+pm_cmdline_ptr:
+    .long 0
 
 # ── GDT for Protected Mode ──
 .align 16
@@ -609,17 +864,27 @@ menu_timer:
     .asciz "  Seconds until the highlighted choice will be started automatically:  10"
 menu_footer:
     .asciz "  ENTER=Choose  |  F1=Help  |  ESC=Advanced Options"
-pm_ready_msg:
-    .asciz "ZirconOS Boot Manager: Protected mode active"
+
+# ── Protected mode messages ──
+pm_msg_loading:
+    .asciz "ZBM: Loading kernel from disk (ATA PIO)..."
+pm_msg_ok:
+    .asciz "ZBM: Kernel loaded at 1MB, ELF verified"
+pm_msg_jump:
+    .asciz "ZBM: Jumping to kernel_main (Multiboot2)..."
+pm_msg_err:
+    .asciz "ZBM: ERROR - No valid ELF kernel at 1MB!"
+pm_bootloader_name:
+    .asciz "ZirconOS Boot Manager 1.0 (BIOS)"
 
 # ── Command lines for each entry ──
 cmdline_default:
-    .asciz "console=serial,vga debug=0"
+    .asciz "console=serial,vga debug=0 desktop=sunvalley"
 cmdline_debug:
-    .asciz "console=serial,vga debug=1 verbose=1"
+    .asciz "console=serial,vga debug=1 verbose=1 desktop=sunvalley"
 cmdline_safe:
-    .asciz "safe_mode=1 debug=0 minimal=1"
+    .asciz "safe_mode=1 debug=0 minimal=1 desktop=sunvalley"
 cmdline_recovery:
-    .asciz "recovery=1 console=serial,vga debug=1"
+    .asciz "recovery=1 console=serial,vga debug=1 desktop=sunvalley"
 cmdline_lastgood:
-    .asciz "lastknowngood=1"
+    .asciz "lastknowngood=1 desktop=sunvalley"

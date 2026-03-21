@@ -12,6 +12,7 @@ const arch_name = switch (builtin.target.cpu.arch) {
 };
 
 const debug_mode = @import("build_options").debug;
+const desktop_theme_name = @import("build_options").desktop;
 
 // ── ZirconOS Boot Manager Constants ──
 
@@ -41,12 +42,12 @@ var countdown: u32 = DEFAULT_TIMEOUT;
 var timer_active: bool = true;
 
 fn initBootEntries() void {
-    addEntry("ZirconOS v1.0", KERNEL_PATH, "console=serial,vga debug=0", true);
-    addEntry("ZirconOS v1.0 [Debug Mode]", KERNEL_PATH, "console=serial,vga debug=1 verbose=1", false);
+    addEntry("ZirconOS v1.0", KERNEL_PATH, "console=serial,vga debug=0 desktop=" ++ desktop_theme_name, true);
+    addEntry("ZirconOS v1.0 [Debug Mode]", KERNEL_PATH, "console=serial,vga debug=1 verbose=1 desktop=" ++ desktop_theme_name, false);
     addEntry("ZirconOS v1.0 [Safe Mode]", KERNEL_PATH, "safe_mode=1 debug=0 minimal=1", false);
     addEntry("ZirconOS v1.0 [Safe Mode with Networking]", KERNEL_PATH, "safe_mode=1 network=1", false);
     addEntry("ZirconOS v1.0 [Recovery Console]", KERNEL_PATH, "recovery=1 console=serial,vga debug=1", false);
-    addEntry("ZirconOS v1.0 [Last Known Good Configuration]", KERNEL_PATH, "lastknowngood=1", false);
+    addEntry("ZirconOS v1.0 [CMD Shell]", KERNEL_PATH, "console=serial,vga shell=cmd", false);
 }
 
 fn addEntry(desc: []const u8, path: []const u8, cmdline: []const u8, is_default: bool) void {
@@ -79,8 +80,12 @@ pub fn main() noreturn {
 
     // ── Interactive Menu Loop ──
     const cin = st.con_in orelse {
-        // No input — auto-boot default after display
+        // No console input (headless firmware): boot default entry immediately.
+        // Previously we halted here, which prevented the kernel from ever loading.
         displayBootProgress(out);
+        loadAndBootKernel(out, bs);
+        puts(out, "\r\n");
+        puts(out, "  [!!] Failed to load kernel image (no console input path).\r\n");
         halt();
     };
 
@@ -371,6 +376,15 @@ const Elf64_Phdr = extern struct {
 
 const PT_LOAD: u32 = 1;
 
+// GOP framebuffer info passed from UEFI to kernel via multiboot2 tag
+const GopFbInfo = struct {
+    addr: u64,
+    width: u32,
+    height: u32,
+    pitch: u32,
+    bpp: u8,
+};
+
 const UEFI_VECTOR_MAGIC: u32 = 0x55454649;
 const MULTIBOOT2_MAGIC: u32 = 0x36d76289;
 
@@ -382,6 +396,45 @@ const UefiVectorTable = extern struct {
 };
 
 // ── Kernel Loading (UEFI) ──
+
+fn queryGopFramebuffer(out: anytype, bs: *uefi.tables.BootServices) ?GopFbInfo {
+    const gop_opt = bs.locateProtocol(uefi.protocol.GraphicsOutput, null) catch return null;
+    const gop = gop_opt orelse return null;
+
+    const mode = gop.mode;
+    const info = mode.info;
+
+    const bpp: u8 = switch (info.pixel_format) {
+        .red_green_blue_reserved_8_bit_per_color,
+        .blue_green_red_reserved_8_bit_per_color,
+        => 32,
+        .bit_mask => 32,
+        else => 0,
+    };
+
+    if (bpp == 0) {
+        puts(out, "    [!] GOP pixel format unsupported for framebuffer\r\n");
+        return null;
+    }
+
+    const fb_info = GopFbInfo{
+        .addr = @intCast(mode.frame_buffer_base),
+        .width = info.horizontal_resolution,
+        .height = info.vertical_resolution,
+        .pitch = info.pixels_per_scan_line * (@as(u32, bpp) / 8),
+        .bpp = bpp,
+    };
+
+    puts(out, "    [*] GOP Framebuffer: ");
+    printDecimal(out, fb_info.width);
+    puts(out, "x");
+    printDecimal(out, fb_info.height);
+    puts(out, "x");
+    printDecimal(out, @as(u32, bpp));
+    puts(out, "\r\n");
+
+    return fb_info;
+}
 
 fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
     // ── Step 1: Open kernel.elf from ESP ──
@@ -565,7 +618,10 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
     printHex64(out, kernel_entry);
     puts(out, "\r\n");
 
-    // ── Step 6: Build Multiboot2-compatible boot info ──
+    // ── Step 6: Query GOP framebuffer (must be done BEFORE ExitBootServices) ──
+    const gop_fb = queryGopFramebuffer(out, bs);
+
+    // ── Step 7: Build Multiboot2-compatible boot info ──
     const boot_info_pages = bs.allocatePages(.{ .any = {} }, .loader_data, 2) catch {
         puts(out, "    [!!] Failed to allocate boot info memory\r\n");
         return;
@@ -580,16 +636,16 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
         return;
     };
 
-    const boot_info_addr = buildBootInfo(bi_base, mmap, entries[selected].cmdline);
+    const boot_info_addr = buildBootInfo(bi_base, mmap, entries[selected].cmdline, gop_fb);
     puts(out, "    [*] Multiboot2 boot info ready\r\n");
 
-    // ── Step 7: Exit boot services ──
+    // ── Step 8: Exit boot services ──
     puts(out, "    [*] Exiting boot services...\r\n");
 
     bs.exitBootServices(uefi.handle, mmap.info.key) catch {
         // Key changed, retry
         const mmap2 = bs.getMemoryMap(@as([]align(@alignOf(uefi.tables.MemoryDescriptor)) u8, &mmap_buf)) catch return;
-        _ = buildBootInfo(bi_base, mmap2, entries[selected].cmdline);
+        _ = buildBootInfo(bi_base, mmap2, entries[selected].cmdline, gop_fb);
         bs.exitBootServices(uefi.handle, mmap2.info.key) catch return;
     };
 
@@ -615,6 +671,7 @@ fn buildBootInfo(
     bi_base: [*]u8,
     mmap: uefi.tables.MemoryMapSlice,
     cmdline: []const u8,
+    gop_fb: ?GopFbInfo,
 ) usize {
     var off: usize = 8; // skip BootInfoHeader (filled at end)
 
@@ -675,6 +732,22 @@ fn buildBootInfo(
         mi[3] = mem_upper_kb;
 
         off += (eoff + 7) & ~@as(usize, 7);
+    }
+
+    // Tag: framebuffer (type=8) — GOP framebuffer info for graphical desktop
+    if (gop_fb) |fb| {
+        const base = bi_base + off;
+        @as(*u32, @ptrCast(@alignCast(base))).* = 8; // type
+        @as(*u32, @ptrCast(@alignCast(base + 4))).* = 32; // size (8+8+4+4+4+1+1+2=32)
+        @as(*u64, @ptrCast(@alignCast(base + 8))).* = fb.addr; // framebuffer_addr
+        @as(*u32, @ptrCast(@alignCast(base + 16))).* = fb.pitch; // pitch
+        @as(*u32, @ptrCast(@alignCast(base + 20))).* = fb.width; // width
+        @as(*u32, @ptrCast(@alignCast(base + 24))).* = fb.height; // height
+        base[28] = fb.bpp; // bpp
+        base[29] = 1; // fb_type = 1 (direct RGB)
+        base[30] = 0; // reserved
+        base[31] = 0; // padding
+        off += (32 + 7) & ~@as(usize, 7);
     }
 
     // Tag: end (type=0)
