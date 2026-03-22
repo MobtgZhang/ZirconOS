@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     const arch_opt = b.option(
         []const u8,
         "arch",
-        "Target architecture (x86_64, loong64, aarch64, riscv64, mips64el)",
+        "Target architecture (x86_64, loongarch64, aarch64, riscv64, mips64el)",
     ) orelse "x86_64";
     const debug_mode = b.option(bool, "debug", "Enable debug mode (verbose klog, serial output)") orelse false;
     const enable_idt_opt = b.option(bool, "enable_idt", "Enable IDT, timer and syscall (x86_64 only)") orelse true;
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
     var cpu_arch: std.Target.Cpu.Arch = .x86_64;
     if (mem.eql(u8, arch_opt, "x86_64")) {
         cpu_arch = .x86_64;
-    } else if (mem.eql(u8, arch_opt, "loong64")) {
+    } else if (mem.eql(u8, arch_opt, "loongarch64")) {
         cpu_arch = .loongarch64;
     } else if (mem.eql(u8, arch_opt, "aarch64")) {
         cpu_arch = .aarch64;
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     } else if (mem.eql(u8, arch_opt, "mips64el")) {
         cpu_arch = .mips64el;
     } else {
-        @panic("Unsupported arch; expected: x86_64, loong64, aarch64, riscv64, mips64el");
+        @panic("Unsupported arch; expected: x86_64, loongarch64, aarch64, riscv64, mips64el");
     }
 
     const target = b.resolveTargetQuery(.{
@@ -64,7 +64,7 @@ pub fn build(b: *std.Build) void {
     root_mod.addOptions("build_options", build_opts);
 
     const config_defaults_mod = b.createModule(.{
-        .root_source_file = b.path("config/defaults.zig"),
+        .root_source_file = b.path("src/config/defaults.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -84,8 +84,8 @@ pub fn build(b: *std.Build) void {
         b.path("link/x86_64.ld")
     else if (mem.eql(u8, arch_opt, "aarch64"))
         b.path("link/aarch64.ld")
-    else if (mem.eql(u8, arch_opt, "loong64"))
-        b.path("link/loong64.ld")
+    else if (mem.eql(u8, arch_opt, "loongarch64"))
+        b.path("link/loongarch64.ld")
     else if (mem.eql(u8, arch_opt, "riscv64"))
         b.path("link/riscv64.ld")
     else if (mem.eql(u8, arch_opt, "mips64el"))
@@ -101,6 +101,8 @@ pub fn build(b: *std.Build) void {
             kernel.addAssemblyFile(b.path("src/arch/x86_64/isr_common.s"));
             kernel.addAssemblyFile(b.path("src/arch/x86_64/syscall_entry.s"));
         }
+    } else if (mem.eql(u8, arch_opt, "loongarch64")) {
+        kernel.addAssemblyFile(b.path("src/arch/loongarch64/crt0.S"));
     }
 
     b.installArtifact(kernel);
@@ -110,16 +112,19 @@ pub fn build(b: *std.Build) void {
 
     buildUefi(b, cpu_arch, optimize, debug_mode);
     buildZbm(b, cpu_arch, optimize, debug_mode);
+    if (cpu_arch == .loongarch64) {
+        buildLoongArchZbmEfiObject(b, optimize, desktop_default, debug_mode);
+    }
     buildDesktop(b, optimize);
 }
 
 const desktop_themes = [_]struct { name: []const u8, dir: []const u8, import_name: []const u8 }{
-    .{ .name = "classic", .dir = "3rdparty/ZirconOSClassic", .import_name = "ZirconOSClassic" },
-    .{ .name = "luna", .dir = "3rdparty/ZirconOSLuna", .import_name = "ZirconOSLuna" },
-    .{ .name = "aero", .dir = "3rdparty/ZirconOSAero", .import_name = "ZirconOSAero" },
-    .{ .name = "modern", .dir = "3rdparty/ZirconOSModern", .import_name = "ZirconOSModern" },
-    .{ .name = "fluent", .dir = "3rdparty/ZirconOSFluent", .import_name = "ZirconOSFluent" },
-    .{ .name = "sunvalley", .dir = "3rdparty/ZirconOSSunValley", .import_name = "ZirconOSSunValley" },
+    .{ .name = "classic", .dir = "src/desktop/classic", .import_name = "ZirconOSClassic" },
+    .{ .name = "luna", .dir = "src/desktop/luna", .import_name = "ZirconOSLuna" },
+    .{ .name = "aero", .dir = "src/desktop/aero", .import_name = "ZirconOSAero" },
+    .{ .name = "modern", .dir = "src/desktop/modern", .import_name = "ZirconOSModern" },
+    .{ .name = "fluent", .dir = "src/desktop/fluent", .import_name = "ZirconOSFluent" },
+    .{ .name = "sunvalley", .dir = "src/desktop/sunvalley", .import_name = "ZirconOSSunValley" },
 };
 
 fn buildDesktop(b: *std.Build, optimize: std.builtin.OptimizeMode) void {
@@ -299,6 +304,8 @@ fn buildZbm(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin.
 }
 
 fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin.OptimizeMode, debug_mode: bool) void {
+    // LoongArch: use boot/zbm/uefi/main_loongarch64.zig → .o + GNU-EFI link (see buildLoongArchZbmEfiObject).
+    // LoongArch UEFI PE/COFF: Zig's linker does not emit it directly (UnsupportedCoffArchitecture).
     if (cpu_arch != .x86_64 and cpu_arch != .aarch64) return;
 
     const uefi_target = b.resolveTargetQuery(.{
@@ -329,4 +336,31 @@ fn buildUefi(b: *std.Build, cpu_arch: std.Target.Cpu.Arch, optimize: std.builtin
 
     const uefi_step = b.step("uefi", "Build UEFI boot application (.efi)");
     uefi_step.dependOn(&install_uefi.step);
+}
+
+/// LoongArch64 ZBM: Zig → `zbm_loongarch64.o` (freestanding), then GNU-EFI crt0 + objcopy → `.efi`.
+fn buildLoongArchZbmEfiObject(b: *std.Build, optimize: std.builtin.OptimizeMode, desktop_default: []const u8, debug_mode: bool) void {
+    const la_target = b.resolveTargetQuery(.{
+        .cpu_arch = .loongarch64,
+        .os_tag = .freestanding,
+        .abi = .none,
+    });
+    const zbm_opts = b.addOptions();
+    zbm_opts.addOption(bool, "debug", debug_mode);
+    zbm_opts.addOption([]const u8, "desktop", desktop_default);
+    const zbm_mod = b.createModule(.{
+        .root_source_file = b.path("boot/zbm/uefi/main_loongarch64.zig"),
+        .target = la_target,
+        .optimize = optimize,
+        .link_libc = false,
+    });
+    zbm_mod.addOptions("build_options", zbm_opts);
+    const zbm_obj = b.addObject(.{
+        .name = "zbm_loongarch64",
+        .root_module = zbm_mod,
+    });
+    const install_o = b.addInstallFile(zbm_obj.getEmittedBin(), "zbm_loongarch64.o");
+    b.getInstallStep().dependOn(&install_o.step);
+    const zbm_la_step = b.step("zbm-loongarch-uefi", "LoongArch ZBM: Zig object (link with scripts/build/zbm-loongarch64-efi.sh → .efi)");
+    zbm_la_step.dependOn(&install_o.step);
 }

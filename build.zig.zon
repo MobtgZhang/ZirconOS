@@ -10,8 +10,6 @@
         "boot",
         "link",
         "docs",
-        "config",
-        "3rdparty",
     },
     .dependencies = .{},
 }
