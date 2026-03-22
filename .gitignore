@@ -1,3 +1,7 @@
 .zig-cache/
 zig-out/
 *.o
+firmware/
+gnu-efi/src/
+gnu-efi/loongarch64-built/
+gnu-efi-extracted/
