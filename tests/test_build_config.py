@@ -51,7 +51,7 @@ class TestResult:
         }
 
 
-VALID_ARCHES = {"x86_64", "aarch64", "loong64", "riscv64", "mips64el"}
+VALID_ARCHES = {"x86_64", "aarch64", "loongarch64", "riscv64", "mips64el"}
 VALID_BOOT_METHODS = {"mbr", "uefi"}
 VALID_BOOTLOADERS = {"grub", "zbm"}
 VALID_DESKTOPS = {"classic", "luna", "aero", "modern", "fluent", "sunvalley", "none"}
@@ -155,10 +155,10 @@ def test_config_files_exist(project_root, result):
     print("\n=== Config File Existence ===")
 
     config_files = [
-        "config/system.conf",
-        "config/boot.conf",
-        "config/desktop.conf",
-        "config/defaults.zig",
+        "src/config/system.conf",
+        "src/config/boot.conf",
+        "src/config/desktop.conf",
+        "src/config/defaults.zig",
     ]
 
     for f in config_files:
@@ -175,12 +175,12 @@ def test_theme_directories(project_root, values, result):
     print("\n=== Theme Directory Tests ===")
 
     theme_map = {
-        "classic":    "3rdparty/ZirconOSClassic",
-        "luna":       "3rdparty/ZirconOSLuna",
-        "aero":       "3rdparty/ZirconOSAero",
-        "modern":     "3rdparty/ZirconOSModern",
-        "fluent":     "3rdparty/ZirconOSFluent",
-        "sunvalley":  "3rdparty/ZirconOSSunValley",
+        "classic":    "src/desktop/classic",
+        "luna":       "src/desktop/luna",
+        "aero":       "src/desktop/aero",
+        "modern":     "src/desktop/modern",
+        "fluent":     "src/desktop/fluent",
+        "sunvalley":  "src/desktop/sunvalley",
     }
 
     desktop = values.get("DESKTOP", "sunvalley") if values else "sunvalley"

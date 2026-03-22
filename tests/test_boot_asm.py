@@ -18,6 +18,18 @@ from datetime import datetime
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'build', 'test-results')
 
+# ELF e_machine (common)
+EM_X86_64 = 62
+EM_LOONGARCH = 258
+
+
+def get_elf_machine(kernel_path: str) -> int:
+    with open(kernel_path, 'rb') as f:
+        hdr = f.read(20)
+    if len(hdr) < 20:
+        return 0
+    return struct.unpack_from('<H', hdr, 18)[0]
+
 
 class TestResult:
     def __init__(self, name):
@@ -298,6 +310,8 @@ def main():
 
     print(f"ZirconOS Boot Assembly Test Suite")
     print(f"Kernel: {kernel_path}")
+    e_machine = get_elf_machine(kernel_path)
+    print(f"ELF e_machine: {e_machine} (62=x86_64, 258=LoongArch)")
     print("=" * 60)
 
     symbols = get_symbol_table(kernel_path)
@@ -320,11 +334,17 @@ def main():
     results.append(r)
 
     r = TestResult("gdt_structure")
-    test_gdt_structure(symbols, r)
+    if e_machine == EM_X86_64:
+        test_gdt_structure(symbols, r)
+    else:
+        r.ok("skipped (x86_64 boot assembly only)")
     results.append(r)
 
     r = TestResult("page_table_symbols")
-    test_page_table_symbols(symbols, r)
+    if e_machine == EM_X86_64:
+        test_page_table_symbols(symbols, r)
+    else:
+        r.ok("skipped (x86_64 boot page tables only)")
     results.append(r)
 
     write_results(results, args.output_dir)

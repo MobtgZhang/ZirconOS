@@ -83,6 +83,7 @@ def test_makefile_targets(project_root, result):
         try:
             proc = subprocess.run(
                 ["make", "-n", "show-config",
+                 "ARCH=x86_64",
                  f"BOOT_METHOD={boot_method}",
                  f"BOOTLOADER={bootloader}",
                  "DESKTOP=sunvalley"],
@@ -97,6 +98,39 @@ def test_makefile_targets(project_root, result):
             result.fail(f"{label}: make not found")
         except subprocess.TimeoutExpired:
             result.fail(f"{label}: make -n timed out")
+
+    # LoongArch64: BOOTLOADER=zbm only (no GRUB)
+    try:
+        proc_ok = subprocess.run(
+            ["make", "-n", "show-config",
+             "ARCH=loongarch64", "BOOT_METHOD=uefi", "BOOTLOADER=zbm", "DESKTOP=sunvalley"],
+            capture_output=True, text=True, timeout=15,
+            cwd=project_root,
+        )
+        if proc_ok.returncode == 0:
+            result.ok("loongarch64+zbm: Makefile accepts config (dry-run OK)")
+        else:
+            result.fail("loongarch64+zbm: Makefile rejects config", proc_ok.stderr[:200])
+    except FileNotFoundError:
+        result.fail("loongarch64 test: make not found")
+    except subprocess.TimeoutExpired:
+        result.fail("loongarch64+zbm: timed out")
+
+    try:
+        proc_bad = subprocess.run(
+            ["make", "-n", "show-config",
+             "ARCH=loongarch64", "BOOT_METHOD=uefi", "BOOTLOADER=grub", "DESKTOP=sunvalley"],
+            capture_output=True, text=True, timeout=15,
+            cwd=project_root,
+        )
+        if proc_bad.returncode != 0:
+            result.ok("loongarch64+grub: Makefile correctly rejects (ZBM-only)")
+        else:
+            result.fail("loongarch64+grub: Makefile should reject GRUB")
+    except FileNotFoundError:
+        result.fail("loongarch64 grub test: make not found")
+    except subprocess.TimeoutExpired:
+        result.fail("loongarch64+grub: timed out")
 
 
 # ── Test: GRUB config for each desktop ──
@@ -364,6 +398,7 @@ def test_full_boot_matrix(project_root, result):
         try:
             proc = subprocess.run(
                 ["make", "-n", "show-config",
+                 "ARCH=x86_64",
                  f"BOOT_METHOD={combo['boot_method']}",
                  f"BOOTLOADER={combo['bootloader']}",
                  f"DESKTOP={combo['desktop']}"],
