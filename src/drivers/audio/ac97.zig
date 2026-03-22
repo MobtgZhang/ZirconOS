@@ -1,8 +1,6 @@
-//! AC'97 Audio Controller Driver (NT-style)
-//! Provides hardware access for Intel AC'97 compatible audio controllers.
-//! Supports PCM playback, volume control, and mixer register access.
-//! Reference: Intel AC'97 Component Specification Rev 2.3,
-//!            ReactOS drivers/wdm/audio/backpln/portcls/
+//! AC’97 audio miniport (NT6: portcls + AC97 miniport stack, IOCTL surface)
+//! Intel-compatible NAM/NABM programming: PCM, mixer, reset.
+//! Registers `\\Driver\\AC97` / `\\Device\\Audio0`. See Intel AC’97 spec Rev 2.3.
 
 const builtin = @import("builtin");
 const io = @import("../../io/io.zig");

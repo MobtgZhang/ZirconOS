@@ -1,0 +1,57 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="mainBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a1628"/>
+      <stop offset="25%" stop-color="#0d2240"/>
+      <stop offset="50%" stop-color="#143358"/>
+      <stop offset="75%" stop-color="#0f2847"/>
+      <stop offset="100%" stop-color="#091422"/>
+    </linearGradient>
+    <radialGradient id="accentOrb" cx="40%" cy="55%" r="50%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0.25"/>
+      <stop offset="40%" stop-color="#005a9e" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#003060" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warmAccent" cx="80%" cy="40%" r="35%">
+      <stop offset="0%" stop-color="#f7a41d" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#f7a41d" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ribbon1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#0078d4" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#60cdff" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#0078d4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ribbon2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#004578" stop-opacity="0"/>
+      <stop offset="40%" stop-color="#004578" stop-opacity="0.45"/>
+      <stop offset="60%" stop-color="#1a6eb5" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#004578" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="40" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#mainBg)"/>
+  <ellipse cx="768" cy="594" rx="900" ry="480" fill="url(#accentOrb)"/>
+  <ellipse cx="1536" cy="432" rx="500" ry="350" fill="url(#warmAccent)"/>
+
+  <!-- Flowing acrylic ribbons -->
+  <path d="M0,540 C240,420 480,630 720,500 C960,370 1200,580 1440,460 C1680,340 1920,520 1920,480 L1920,580 C1680,640 1440,560 1200,670 C960,480 720,600 480,720 C240,520 0,640 0,600 Z" fill="url(#ribbon1)" opacity="0.6"/>
+  <path d="M0,620 C320,520 640,720 960,580 C1280,440 1600,660 1920,540 L1920,660 C1600,760 1280,560 960,700 C640,830 320,630 0,740 Z" fill="url(#ribbon2)" opacity="0.5"/>
+
+  <!-- Depth layer -->
+  <path d="M0,850 C480,780 960,900 1440,820 C1920,740 1920,1080 1920,1080 L0,1080 Z" fill="#061d36" opacity="0.5"/>
+  <path d="M0,920 C320,870 640,960 960,890 C1280,820 1600,930 1920,870 L1920,1080 L0,1080 Z" fill="#041220" opacity="0.6"/>
+
+  <!-- Subtle sparkles -->
+  <circle cx="340" cy="220" r="1.2" fill="white" opacity="0.3"/>
+  <circle cx="720" cy="150" r="0.8" fill="white" opacity="0.2"/>
+  <circle cx="1100" cy="280" r="1" fill="white" opacity="0.25"/>
+  <circle cx="1500" cy="180" r="1.5" fill="white" opacity="0.2"/>
+  <circle cx="1800" cy="320" r="0.9" fill="white" opacity="0.3"/>
+  <circle cx="500" cy="420" r="0.7" fill="#60cdff" opacity="0.15"/>
+  <circle cx="1350" cy="380" r="1" fill="#60cdff" opacity="0.12"/>
+</svg>

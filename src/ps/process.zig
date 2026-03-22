@@ -78,6 +78,23 @@ var next_tid: u32 = 1;
 var current_pid: u32 = 0;
 var ps_initialized: bool = false;
 
+/// 桌面会话（等价于 csrss/dwm 宿主）：内核桌面循环所在「壳」进程与 UI 线程号。
+var desktop_shell_pid: u32 = 0;
+var desktop_ui_tid: u32 = 0;
+
+pub fn registerDesktopSession(shell_pid: u32, ui_tid: u32) void {
+    desktop_shell_pid = shell_pid;
+    desktop_ui_tid = ui_tid;
+}
+
+pub fn getDesktopShellPid() u32 {
+    return desktop_shell_pid;
+}
+
+pub fn getDesktopUiThreadId() u32 {
+    return desktop_ui_tid;
+}
+
 pub fn init() void {
     process_count = 0;
     next_pid = 1;

@@ -1,0 +1,55 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wvl_bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4EAF8"/>
+      <stop offset="40%" stop-color="#E8F4FF"/>
+      <stop offset="70%" stop-color="#F0F8FF"/>
+      <stop offset="100%" stop-color="#D0E8F8"/>
+    </linearGradient>
+    <radialGradient id="wvl_sun" cx="75%" cy="20%" r="30%">
+      <stop offset="0%" stop-color="#FFF8E0" stop-opacity="0.5"/>
+      <stop offset="50%" stop-color="#FFE8B0" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#FFE8B0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="wvl_glow" cx="40%" cy="50%" r="45%">
+      <stop offset="0%" stop-color="#A0D4F0" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#A0D4F0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wvl_wave1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#B8D8F0" stop-opacity="0.5"/>
+      <stop offset="50%" stop-color="#C8E4F8" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#B8D8F0" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="wvl_wave2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A0CCE8" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#B8DCF4" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#A0CCE8" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="wvl_wave3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#88C0E0" stop-opacity="0.2"/>
+      <stop offset="50%" stop-color="#A0D0F0" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#88C0E0" stop-opacity="0.2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#wvl_bg)"/>
+  <rect width="1920" height="1080" fill="url(#wvl_sun)"/>
+  <rect width="1920" height="1080" fill="url(#wvl_glow)"/>
+
+  <!-- Flowing wave layers -->
+  <path d="M0,580 C300,520 600,640 960,560 C1320,480 1620,620 1920,540 L1920,1080 L0,1080 Z" fill="url(#wvl_wave1)"/>
+  <path d="M0,680 C380,620 760,730 1140,660 C1380,620 1680,720 1920,670 L1920,1080 L0,1080 Z" fill="url(#wvl_wave2)"/>
+  <path d="M0,800 C260,760 540,830 800,790 C1060,750 1380,820 1640,780 C1780,760 1880,790 1920,800 L1920,1080 L0,1080 Z" fill="url(#wvl_wave3)"/>
+
+  <!-- Soft depth bottom -->
+  <path d="M0,900 C320,870 640,920 960,890 C1280,860 1600,910 1920,880 L1920,1080 L0,1080 Z" fill="#C8E0F0" opacity="0.4"/>
+
+  <!-- Light particles -->
+  <circle cx="200" cy="180" r="2" fill="white" opacity="0.5"/>
+  <circle cx="600" cy="130" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="1000" cy="90" r="1.8" fill="white" opacity="0.35"/>
+  <circle cx="1400" cy="160" r="1.5" fill="white" opacity="0.4"/>
+  <circle cx="1700" cy="100" r="2" fill="white" opacity="0.3"/>
+  <circle cx="440" cy="350" r="1.2" fill="#A0D0F0" opacity="0.3"/>
+  <circle cx="1200" cy="320" r="1" fill="#B8DCF4" opacity="0.25"/>
+</svg>

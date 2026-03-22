@@ -1,0 +1,47 @@
+; ZirconOS Fluent Light Theme
+; Compositor: DirectComposition Visual Tree (Acrylic + Reveal + Depth)
+
+[Theme]
+DisplayName=ZirconOS Fluent Light
+ThemeId=fluent_light
+ColorScheme=light
+
+[DWM.Acrylic]
+BlurRadius=20
+BlurPasses=4
+NoiseOpacity=8
+LuminosityBlend=140
+TintColor=F0F0F0
+TintOpacity=50
+
+[DWM.Reveal]
+Enabled=1
+Radius=100
+Opacity=40
+
+[DWM.Shadow]
+DepthLayers=4
+BaseSize=10
+
+[Colors]
+DesktopBackground=E8F4FD
+Accent=0078D4
+AccentLight=429CE3
+AccentDark=005A9E
+TextPrimary=1A1A1A
+TextSecondary=666666
+Surface=FFFFFF
+SurfaceStroke=E0E0E0
+CardBackground=FFFFFF
+TaskbarBackground=F0F0F0
+TitlebarBackground=0078D4
+TitlebarText=000000
+WindowBackground=FFFFFF
+WindowBorder=E0E0E0
+
+[Layout]
+TaskbarHeight=48
+TitlebarHeight=32
+StartMenuWidth=640
+StartMenuHeight=560
+ActionCenterWidth=320

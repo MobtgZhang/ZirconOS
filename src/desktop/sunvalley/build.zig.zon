@@ -1,0 +1,12 @@
+.{
+    .name = .zirconos_sunvalley,
+    .version = "1.0.0",
+    .fingerprint = 0x7035c83e542f5a5e,
+    .minimum_zig_version = "0.15.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "resources",
+    },
+}

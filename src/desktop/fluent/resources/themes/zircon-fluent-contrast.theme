@@ -1,0 +1,46 @@
+; ZirconOS Fluent High Contrast Theme
+; Accessibility-focused variant with maximum contrast ratios
+; Compositor: DirectComposition Visual Tree (Acrylic disabled)
+
+[Theme]
+DisplayName=ZirconOS Fluent High Contrast
+ThemeId=fluent_contrast
+ColorScheme=dark
+HighContrast=1
+
+[DWM.Acrylic]
+Enabled=0
+BlurRadius=0
+NoiseOpacity=0
+
+[DWM.Reveal]
+Enabled=1
+Radius=80
+Opacity=80
+
+[DWM.Shadow]
+DepthLayers=2
+BaseSize=4
+
+[Colors]
+DesktopBackground=000000
+Accent=00FFFF
+AccentLight=00FFFF
+AccentDark=008080
+TextPrimary=FFFFFF
+TextSecondary=00FF00
+Surface=000000
+SurfaceStroke=FFFFFF
+CardBackground=000000
+TaskbarBackground=000000
+TitlebarBackground=000080
+TitlebarText=FFFFFF
+WindowBackground=000000
+WindowBorder=FFFFFF
+
+[Layout]
+TaskbarHeight=48
+TitlebarHeight=32
+StartMenuWidth=640
+StartMenuHeight=560
+ActionCenterWidth=320

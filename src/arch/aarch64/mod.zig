@@ -33,6 +33,10 @@ pub fn halt() noreturn {
     }
 }
 
+pub fn standby() noreturn {
+    halt();
+}
+
 pub fn shutdown() noreturn {
     asm volatile ("hvc #0"
         :

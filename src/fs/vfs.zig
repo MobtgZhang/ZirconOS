@@ -169,7 +169,10 @@ pub fn unmount(prefix: []const u8) FileStatus {
         if (mp.prefix_len == prefix.len) {
             var match = true;
             for (mp.prefix[0..mp.prefix_len], prefix) |a, b| {
-                if (a != b) { match = false; break; }
+                if (a != b) {
+                    match = false;
+                    break;
+                }
             }
             if (match) {
                 mp.is_active = false;
@@ -189,7 +192,10 @@ fn findMount(path: []const u8) ?*MountPoint {
         if (path.len >= mp.prefix_len and mp.prefix_len > best_len) {
             var match = true;
             for (mp.prefix[0..mp.prefix_len], path[0..mp.prefix_len]) |a, b| {
-                if (a != b) { match = false; break; }
+                if (a != b) {
+                    match = false;
+                    break;
+                }
             }
             if (match) {
                 best = mp;

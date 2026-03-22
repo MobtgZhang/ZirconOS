@@ -1,0 +1,13 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="svEwShadow">
+      <feDropShadow dx="0.4" dy="0.5" stdDeviation="0.5" flood-color="#0A1628" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <g filter="url(#svEwShadow)">
+    <path d="M3,16 L9,11 L9,14 L23,14 L23,11 L29,16 L23,21 L23,18 L9,18 L9,21 Z"
+          fill="#1a1a1a" stroke="#0C1E36" stroke-width="0.9" stroke-linejoin="round"/>
+    <path d="M4.5,16 L9.5,12 L9.5,14.5 L22.5,14.5 L22.5,12 L27.5,16 L22.5,20 L22.5,17.5 L9.5,17.5 L9.5,20 Z"
+          fill="white" stroke="#4CB0E8" stroke-width="0.3" stroke-opacity="0.25" stroke-linejoin="round"/>
+  </g>
+</svg>

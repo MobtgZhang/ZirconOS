@@ -1,10 +1,11 @@
-//! Graphical Framebuffer Driver
-//! Provides pixel-level drawing primitives, optimized bulk operations, and
-//! text rendering for the ZirconOS desktop compositor.
-//! Original implementation by ZirconOS project.
+//! Graphical framebuffer miniport (NT6: analog to display miniport + surface IOCTLs)
+//! Pixel primitives, bulk ops, and IRP/IOCTL dispatch for the DWM/compositor path.
+//! Original ZirconOS implementation; registers `\\Driver\\Framebuf` / `\\Device\\Framebuf0`.
 
+const std = @import("std");
 const io = @import("../../io/io.zig");
 const klog = @import("../../rtl/klog.zig");
+const cjk_font = @import("cjk_font.zig");
 
 // ── Pixel Format ──
 
@@ -19,15 +20,15 @@ pub const PixelFormat = enum(u8) {
 };
 
 pub fn RGB(r: u8, g: u8, b: u8) u32 {
-    return @as(u32, b) << 16 | @as(u32, g) << 8 | @as(u32, r);
+    return @as(u32, r) << 16 | @as(u32, g) << 8 | @as(u32, b);
 }
 
 pub fn ARGB(a: u8, r: u8, g: u8, b: u8) u32 {
-    return @as(u32, a) << 24 | @as(u32, b) << 16 | @as(u32, g) << 8 | @as(u32, r);
+    return @as(u32, a) << 24 | @as(u32, r) << 16 | @as(u32, g) << 8 | @as(u32, b);
 }
 
 pub fn getRed(color: u32) u8 {
-    return @truncate(color & 0xFF);
+    return @truncate((color >> 16) & 0xFF);
 }
 
 pub fn getGreen(color: u32) u8 {
@@ -35,7 +36,7 @@ pub fn getGreen(color: u32) u8 {
 }
 
 pub fn getBlue(color: u32) u8 {
-    return @truncate((color >> 16) & 0xFF);
+    return @truncate(color & 0xFF);
 }
 
 pub fn getAlpha(color: u32) u8 {
@@ -52,6 +53,8 @@ pub const FramebufferConfig = struct {
     bpp: u8 = 0,
     pixel_format: PixelFormat = .xrgb8888,
     double_buffer: bool = false,
+    /// true：显存为 BGRx（首字节蓝，UEFI/QEMU GOP 常见）；false：RGBx（首字节红）
+    pixel_bgr: bool = true,
 };
 
 // ── Rect / Point types ──
@@ -85,11 +88,20 @@ const MAX_DIRTY_RECTS: usize = 32;
 var dirty_rects: [MAX_DIRTY_RECTS]Rect = [_]Rect{.{}} ** MAX_DIRTY_RECTS;
 var dirty_count: usize = 0;
 
-fn addDirtyRect(r: Rect) void {
+pub fn addDirtyRect(r: Rect) void {
     if (dirty_count < MAX_DIRTY_RECTS) {
         dirty_rects[dirty_count] = r;
         dirty_count += 1;
     }
+}
+
+pub fn markDirtyRegion(x: i32, y: i32, w: i32, h: i32) void {
+    if (w <= 0 or h <= 0) return;
+    addDirtyRect(.{ .x = x, .y = y, .w = w, .h = h });
+}
+
+pub fn markFullScreenDirty() void {
+    dirty_count = MAX_DIRTY_RECTS;
 }
 
 // ── Driver State ──
@@ -105,6 +117,13 @@ var config_ready: bool = false;
 var total_draw_calls: u64 = 0;
 var total_flips: u64 = 0;
 
+// ── Double Buffering (back buffer) ──
+// All draw calls write to this off-screen buffer; flip() copies it to the
+// visible framebuffer in one shot, eliminating partial-frame flickering.
+const BACK_BUF_MAX: usize = 10 * 1024 * 1024; // 10 MB – covers up to 1920×1080@32bpp
+var back_buf: [BACK_BUF_MAX]u8 = undefined;
+var double_buffer_active: bool = false;
+
 // ── IOCTL Codes ──
 
 pub const IOCTL_FB_GET_CONFIG: u32 = 0x00090000;
@@ -119,20 +138,56 @@ pub const IOCTL_FB_GET_STATS: u32 = 0x0009001C;
 // ── Internal Helpers ──
 
 fn getDrawBuffer() [*]volatile u8 {
+    if (double_buffer_active) {
+        return @volatileCast(@as([*]u8, &back_buf));
+    }
     return @ptrFromInt(fb_config.address);
 }
 
-inline fn writePixel4(ptr: [*]volatile u8, offset: u32, color: u32) void {
-    ptr[offset] = @truncate(color);
-    ptr[offset + 1] = @truncate(color >> 8);
-    ptr[offset + 2] = @truncate(color >> 16);
-    ptr[offset + 3] = @truncate(color >> 24);
+/// Pre-pack a color into the native pixel word so that solid fills can write
+/// one u32 per pixel instead of four individual bytes.
+fn packPixel32(color: u32) u32 {
+    if (fb_config.pixel_bgr) {
+        return color | 0xFF000000;
+    } else {
+        const b = color & 0xFF;
+        const g = (color >> 8) & 0xFF;
+        const r = (color >> 16) & 0xFF;
+        return r | (g << 8) | (b << 16) | 0xFF000000;
+    }
 }
 
-inline fn writePixel3(ptr: [*]volatile u8, offset: u32, color: u32) void {
-    ptr[offset] = @truncate(color);
-    ptr[offset + 1] = @truncate(color >> 8);
-    ptr[offset + 2] = @truncate(color >> 16);
+/// color 为与 `display.rgb` 一致：低 8 位 B，中 G，高 R（无 Alpha 语义）
+fn writePixel4(ptr: [*]volatile u8, offset: u32, color: u32) void {
+    const b = color & 0xFF;
+    const g = (color >> 8) & 0xFF;
+    const r = (color >> 16) & 0xFF;
+    if (fb_config.pixel_bgr) {
+        ptr[offset] = @truncate(b);
+        ptr[offset + 1] = @truncate(g);
+        ptr[offset + 2] = @truncate(r);
+    } else {
+        ptr[offset] = @truncate(r);
+        ptr[offset + 1] = @truncate(g);
+        ptr[offset + 2] = @truncate(b);
+    }
+    // XRGB：Alpha 为 0 时部分固件/合成路径会当作全透明，强制不透明
+    ptr[offset + 3] = 0xFF;
+}
+
+fn writePixel3(ptr: [*]volatile u8, offset: u32, color: u32) void {
+    const b = color & 0xFF;
+    const g = (color >> 8) & 0xFF;
+    const r = (color >> 16) & 0xFF;
+    if (fb_config.pixel_bgr) {
+        ptr[offset] = @truncate(b);
+        ptr[offset + 1] = @truncate(g);
+        ptr[offset + 2] = @truncate(r);
+    } else {
+        ptr[offset] = @truncate(r);
+        ptr[offset + 1] = @truncate(g);
+        ptr[offset + 2] = @truncate(b);
+    }
 }
 
 // ── Pixel Operations ──
@@ -165,10 +220,18 @@ pub fn getPixel32(x: u32, y: u32) u32 {
     const ptr = getDrawBuffer();
 
     if (bytes_pp >= 3) {
-        return @as(u32, ptr[offset]) |
-            (@as(u32, ptr[offset + 1]) << 8) |
-            (@as(u32, ptr[offset + 2]) << 16) |
-            if (bytes_pp == 4) (@as(u32, ptr[offset + 3]) << 24) else 0;
+        if (fb_config.pixel_bgr) {
+            return @as(u32, ptr[offset]) |
+                (@as(u32, ptr[offset + 1]) << 8) |
+                (@as(u32, ptr[offset + 2]) << 16) |
+                if (bytes_pp == 4) (@as(u32, ptr[offset + 3]) << 24) else 0;
+        } else {
+            const pr = ptr[offset];
+            const pg = ptr[offset + 1];
+            const pb = ptr[offset + 2];
+            const pa = if (bytes_pp == 4) ptr[offset + 3] else 0;
+            return pb | (@as(u32, pg) << 8) | (@as(u32, pr) << 16) | (@as(u32, pa) << 24);
+        }
     }
     return 0;
 }
@@ -202,9 +265,12 @@ fn fillRowDirect(py: u32, x0: u32, x1: u32, color: u32) void {
     const count = x1 - x0;
 
     if (bytes_pp == 4) {
+        const pxval = packPixel32(color);
+        const base_addr = @intFromPtr(ptr) + row_offset;
         var i: u32 = 0;
         while (i < count) : (i += 1) {
-            writePixel4(ptr, row_offset + i * 4, color);
+            const word_ptr: *align(1) volatile u32 = @ptrFromInt(base_addr + @as(usize, i) * 4);
+            word_ptr.* = pxval;
         }
     } else if (bytes_pp == 3) {
         var i: u32 = 0;
@@ -342,13 +408,16 @@ fn blendChannel(a: u32, b: u32, t: u32, total: u32) u32 {
 pub fn clearScreen(color: u32) void {
     if (fb_config.width == 0 or fb_config.height == 0) return;
     const bytes_pp = @as(u32, fb_config.bpp) / 8;
-    const ptr = getDrawBuffer();
 
     if (bytes_pp == 4) {
+        const pxval = packPixel32(color);
+        const ptr = getDrawBuffer();
+        const base_addr = @intFromPtr(ptr);
         const total = fb_config.pitch * fb_config.height;
         var off: u32 = 0;
         while (off < total) : (off += 4) {
-            writePixel4(ptr, off, color);
+            const word_ptr: *align(1) volatile u32 = @ptrFromInt(base_addr + off);
+            word_ptr.* = pxval;
         }
         total_draw_calls += 1;
     } else {
@@ -410,6 +479,61 @@ pub fn drawCharTransparent(x: i32, y: i32, ch: u8, fg: u32) void {
     }
 }
 
+fn drawCjk16Transparent(x: i32, y: i32, rows: [16]u16, fg: u32) void {
+    var dy: u32 = 0;
+    while (dy < cjk_font.CJK_H) : (dy += 1) {
+        const py_i = y + @as(i32, @intCast(dy));
+        if (py_i < 0 or py_i >= @as(i32, @intCast(fb_config.height))) continue;
+        const bits = rows[dy];
+        var dx: u32 = 0;
+        while (dx < cjk_font.CJK_W) : (dx += 1) {
+            if ((bits >> @intCast(15 - dx)) & 1 != 0) {
+                const px_i = x + @as(i32, @intCast(dx));
+                if (px_i >= 0 and px_i < @as(i32, @intCast(fb_config.width))) {
+                    putPixel32(@intCast(px_i), @intCast(py_i), fg);
+                }
+            }
+        }
+    }
+}
+
+fn drawTextTransparentClippedInner(x: i32, y: i32, text: []const u8, fg: u32, clip_max_x: ?i32) void {
+    const view = std.unicode.Utf8View.init(text) catch {
+        var cx = x;
+        for (text) |b| {
+            if (clip_max_x) |mx| {
+                if (cx + @as(i32, @intCast(CHAR_W)) > mx) break;
+            }
+            drawCharTransparent(cx, y, b, fg);
+            cx += @as(i32, @intCast(CHAR_W));
+        }
+        return;
+    };
+    var it = view.iterator();
+    var cx = x;
+    while (it.nextCodepoint()) |cp| {
+        const adv: i32 = @intCast(cjk_font.codepointWidth(cp));
+        if (clip_max_x) |mx| {
+            if (cx + adv > mx) break;
+        }
+        if (cp < 0x80) {
+            drawCharTransparent(cx, y, @truncate(cp), fg);
+        } else if (cjk_font.lookup(cp)) |rows| {
+            drawCjk16Transparent(cx, y, rows, fg);
+        } else if (cjk_font.isWideCodepoint(cp)) {
+            drawCjk16Transparent(cx, y, cjk_font.tofu_rows, fg);
+        } else {
+            drawCharTransparent(cx, y, '?', fg);
+        }
+        cx += adv;
+    }
+}
+
+/// 在 [x, x_max_excl) 内绘制 UTF-8 文本，超出右边界则截断。
+pub fn drawTextTransparentClipped(x: i32, y: i32, x_max_excl: i32, text: []const u8, fg: u32) void {
+    drawTextTransparentClippedInner(x, y, text, fg, x_max_excl);
+}
+
 pub fn drawText(x: i32, y: i32, text: []const u8, fg: u32, bg: u32) void {
     var cx = x;
     for (text) |ch| {
@@ -420,12 +544,41 @@ pub fn drawText(x: i32, y: i32, text: []const u8, fg: u32, bg: u32) void {
 }
 
 pub fn drawTextTransparent(x: i32, y: i32, text: []const u8, fg: u32) void {
-    var cx = x;
-    for (text) |ch| {
-        if (cx + @as(i32, CHAR_W) > @as(i32, @intCast(fb_config.width))) break;
-        drawCharTransparent(cx, y, ch, fg);
-        cx += @as(i32, CHAR_W);
+    drawTextTransparentClippedInner(x, y, text, fg, @intCast(fb_config.width));
+}
+
+/// 2× / 3× scaled glyphs for taskbar and status lines (clearer than 8×16 on large panels).
+pub fn drawCharTransparentScaled(x: i32, y: i32, ch: u8, fg: u32, scale: u32) void {
+    if (scale < 1) return;
+    const glyph = getGlyph(ch);
+    var dy: u32 = 0;
+    while (dy < CHAR_H) : (dy += 1) {
+        const bits = glyph[dy];
+        var dx: u32 = 0;
+        while (dx < CHAR_W) : (dx += 1) {
+            if ((bits >> @intCast(7 - dx)) & 1 != 0) {
+                const px = x + @as(i32, @intCast(dx * scale));
+                const py = y + @as(i32, @intCast(dy * scale));
+                fillRect(px, py, @as(i32, @intCast(scale)), @as(i32, @intCast(scale)), fg);
+            }
+        }
     }
+}
+
+pub fn drawTextTransparentScaled(x: i32, y: i32, text: []const u8, fg: u32, scale: u32) void {
+    if (scale < 1) return;
+    var cx = x;
+    const adv: i32 = @as(i32, @intCast(CHAR_W * scale));
+    for (text) |ch| {
+        if (cx + adv > @as(i32, @intCast(fb_config.width))) break;
+        drawCharTransparentScaled(cx, y, ch, fg, scale);
+        cx += adv;
+    }
+}
+
+pub fn textWidthScaled(text: []const u8, scale: u32) i32 {
+    if (scale < 1) return 0;
+    return @as(i32, @intCast(text.len * CHAR_W * scale));
 }
 
 pub fn drawTextCentered(x: i32, y: i32, w: i32, h: i32, text: []const u8, fg: u32) void {
@@ -436,7 +589,15 @@ pub fn drawTextCentered(x: i32, y: i32, w: i32, h: i32, text: []const u8, fg: u3
 }
 
 pub fn textWidth(text: []const u8) i32 {
-    return @intCast(text.len * CHAR_W);
+    const view = std.unicode.Utf8View.init(text) catch {
+        return @intCast(text.len * CHAR_W);
+    };
+    var it = view.iterator();
+    var w: i32 = 0;
+    while (it.nextCodepoint()) |cp| {
+        w += @as(i32, @intCast(cjk_font.codepointWidth(cp)));
+    }
+    return w;
 }
 
 // ── Rounded Rectangle ──
@@ -456,11 +617,16 @@ pub fn fillRoundedRect(x: i32, y: i32, w: i32, h: i32, radius: i32, color: u32) 
 }
 
 fn fillCircleQuarter(cx: i32, cy: i32, radius: i32, quarter: u2, color: u32) void {
+    if (radius <= 0) return;
+    const r64 = @as(i64, radius);
+    const r2 = r64 * r64;
     var dy: i32 = 0;
     while (dy <= radius) : (dy += 1) {
         var dx: i32 = 0;
         while (dx <= radius) : (dx += 1) {
-            if (dx * dx + dy * dy <= radius * radius) {
+            const dx64 = @as(i64, dx);
+            const dy64 = @as(i64, dy);
+            if (dx64 * dx64 + dy64 * dy64 <= r2) {
                 const px: i32 = switch (quarter) {
                     0 => cx - dx,
                     1 => cx + dx,
@@ -497,13 +663,12 @@ pub fn draw3DRect(x: i32, y: i32, w: i32, h: i32, highlight: u32, shadow: u32) v
 // Operates directly on the framebuffer using a static line buffer.
 
 const BLUR_MAX_LINE: usize = 4096;
-var blur_buf_r: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
-var blur_buf_g: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
-var blur_buf_b: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
+var blur_line: [BLUR_MAX_LINE]u32 = [_]u32{0} ** BLUR_MAX_LINE;
 
 pub fn boxBlurRect(x: i32, y: i32, w: i32, h: i32, radius: u32, passes: u32) void {
     if (w <= 0 or h <= 0 or radius == 0 or passes == 0) return;
     if (!config_ready) return;
+    if (fb_config.bpp < 24) return;
 
     const x0: u32 = if (x < 0) 0 else @intCast(x);
     const y0: u32 = if (y < 0) 0 else @intCast(y);
@@ -515,65 +680,81 @@ pub fn boxBlurRect(x: i32, y: i32, w: i32, h: i32, radius: u32, passes: u32) voi
     const rh = y1 - y0;
     if (rw > BLUR_MAX_LINE or rh > BLUR_MAX_LINE) return;
 
+    const buf = getDrawBuffer();
+    const pitch = fb_config.pitch;
+    const bpp: u32 = @as(u32, fb_config.bpp) / 8;
+
     var pass: u32 = 0;
     while (pass < passes) : (pass += 1) {
-        // Horizontal pass
+        // Horizontal pass: process each row
         var row: u32 = y0;
         while (row < y1) : (row += 1) {
-            var col: u32 = x0;
-            while (col < x1) : (col += 1) {
-                const c = getPixel32(col, row);
-                const idx = col - x0;
-                blur_buf_r[idx] = c & 0xFF;
-                blur_buf_g[idx] = (c >> 8) & 0xFF;
-                blur_buf_b[idx] = (c >> 16) & 0xFF;
+            const row_base = row * pitch + x0 * bpp;
+            // Read entire row into blur_line as packed XRGB u32
+            var i: u32 = 0;
+            while (i < rw) : (i += 1) {
+                const off = row_base + i * bpp;
+                blur_line[i] = @as(u32, buf[off]) | (@as(u32, buf[off + 1]) << 8) | (@as(u32, buf[off + 2]) << 16);
             }
-            col = x0;
-            while (col < x1) : (col += 1) {
-                const idx = col - x0;
-                const lo = if (idx >= radius) idx - radius else 0;
-                const hi = @min(idx + radius + 1, rw);
+            // Running-sum horizontal blur
+            i = 0;
+            while (i < rw) : (i += 1) {
+                const lo = if (i >= radius) i - radius else 0;
+                const hi = @min(i + radius + 1, rw);
                 const cnt = hi - lo;
                 var sr: u32 = 0;
                 var sg: u32 = 0;
                 var sb: u32 = 0;
                 var k: u32 = lo;
                 while (k < hi) : (k += 1) {
-                    sr += blur_buf_r[k];
-                    sg += blur_buf_g[k];
-                    sb += blur_buf_b[k];
+                    const px = blur_line[k];
+                    sr += px & 0xFF;
+                    sg += (px >> 8) & 0xFF;
+                    sb += (px >> 16) & 0xFF;
                 }
-                putPixel32(col, row, (sr / cnt) | ((sg / cnt) << 8) | ((sb / cnt) << 16));
+                const off = row_base + i * bpp;
+                const rb: u8 = @truncate(sr / cnt);
+                const gb: u8 = @truncate(sg / cnt);
+                const bb: u8 = @truncate(sb / cnt);
+                buf[off] = rb;
+                buf[off + 1] = gb;
+                buf[off + 2] = bb;
             }
         }
 
-        // Vertical pass
-        var col2: u32 = x0;
-        while (col2 < x1) : (col2 += 1) {
-            var row2: u32 = y0;
-            while (row2 < y1) : (row2 += 1) {
-                const c = getPixel32(col2, row2);
-                const idx = row2 - y0;
-                blur_buf_r[idx] = c & 0xFF;
-                blur_buf_g[idx] = (c >> 8) & 0xFF;
-                blur_buf_b[idx] = (c >> 16) & 0xFF;
+        // Vertical pass: process each column
+        var col: u32 = x0;
+        while (col < x1) : (col += 1) {
+            const col_off = col * bpp;
+            // Read column pixels into blur_line
+            var j: u32 = 0;
+            while (j < rh) : (j += 1) {
+                const off = (y0 + j) * pitch + col_off;
+                blur_line[j] = @as(u32, buf[off]) | (@as(u32, buf[off + 1]) << 8) | (@as(u32, buf[off + 2]) << 16);
             }
-            row2 = y0;
-            while (row2 < y1) : (row2 += 1) {
-                const idx = row2 - y0;
-                const lo = if (idx >= radius) idx - radius else 0;
-                const hi = @min(idx + radius + 1, rh);
+            // Running-sum vertical blur
+            j = 0;
+            while (j < rh) : (j += 1) {
+                const lo = if (j >= radius) j - radius else 0;
+                const hi = @min(j + radius + 1, rh);
                 const cnt = hi - lo;
                 var sr: u32 = 0;
                 var sg: u32 = 0;
                 var sb: u32 = 0;
                 var k: u32 = lo;
                 while (k < hi) : (k += 1) {
-                    sr += blur_buf_r[k];
-                    sg += blur_buf_g[k];
-                    sb += blur_buf_b[k];
+                    const px = blur_line[k];
+                    sr += px & 0xFF;
+                    sg += (px >> 8) & 0xFF;
+                    sb += (px >> 16) & 0xFF;
                 }
-                putPixel32(col2, row2, (sr / cnt) | ((sg / cnt) << 8) | ((sb / cnt) << 16));
+                const off = (y0 + j) * pitch + col_off;
+                const rb: u8 = @truncate(sr / cnt);
+                const gb: u8 = @truncate(sg / cnt);
+                const bb: u8 = @truncate(sb / cnt);
+                buf[off] = rb;
+                buf[off + 1] = gb;
+                buf[off + 2] = bb;
             }
         }
     }
@@ -591,9 +772,9 @@ pub fn blendTintRect(x: i32, y: i32, w: i32, h: i32, tint: u32, alpha: u8, satur
     const y1: u32 = @min(y0 + @as(u32, @intCast(h)), fb_config.height);
     if (x0 >= x1 or y0 >= y1) return;
 
-    const tr: u32 = tint & 0xFF;
-    const tg: u32 = (tint >> 8) & 0xFF;
-    const tb: u32 = (tint >> 16) & 0xFF;
+    const t_b: u32 = tint & 0xFF;
+    const t_g: u32 = (tint >> 8) & 0xFF;
+    const t_r: u32 = (tint >> 16) & 0xFF;
     const a: u32 = @as(u32, alpha);
     const inv_a: u32 = 255 - a;
     const sat: u32 = @as(u32, saturation);
@@ -606,22 +787,38 @@ pub fn blendTintRect(x: i32, y: i32, w: i32, h: i32, tint: u32, alpha: u8, satur
         var px: u32 = x0;
         while (px < x1) : (px += 1) {
             const off = py * fb_config.pitch + px * bytes_pp;
-            var cr: u32 = @as(u32, ptr[off]);
-            var cg: u32 = @as(u32, ptr[off + 1]);
-            var cb: u32 = @as(u32, ptr[off + 2]);
+            var r: u32 = undefined;
+            var g: u32 = undefined;
+            var b: u32 = undefined;
+            if (fb_config.pixel_bgr) {
+                b = @as(u32, ptr[off]);
+                g = @as(u32, ptr[off + 1]);
+                r = @as(u32, ptr[off + 2]);
+            } else {
+                r = @as(u32, ptr[off]);
+                g = @as(u32, ptr[off + 1]);
+                b = @as(u32, ptr[off + 2]);
+            }
 
-            const lum = (cr * 77 + cg * 150 + cb * 29) >> 8;
-            cr = (cr * sat + lum * (255 - sat)) / 255;
-            cg = (cg * sat + lum * (255 - sat)) / 255;
-            cb = (cb * sat + lum * (255 - sat)) / 255;
+            const lum = (r * 77 + g * 150 + b * 29) >> 8;
+            r = (r * sat + lum * (255 - sat)) / 255;
+            g = (g * sat + lum * (255 - sat)) / 255;
+            b = (b * sat + lum * (255 - sat)) / 255;
 
-            const out_r = (tr * a + cr * inv_a) / 255;
-            const out_g = (tg * a + cg * inv_a) / 255;
-            const out_b = (tb * a + cb * inv_a) / 255;
+            const out_r = (t_r * a + r * inv_a) / 255;
+            const out_g = (t_g * a + g * inv_a) / 255;
+            const out_b = (t_b * a + b * inv_a) / 255;
 
-            ptr[off] = @truncate(out_r);
-            ptr[off + 1] = @truncate(out_g);
-            ptr[off + 2] = @truncate(out_b);
+            if (fb_config.pixel_bgr) {
+                ptr[off] = @truncate(out_b);
+                ptr[off + 1] = @truncate(out_g);
+                ptr[off + 2] = @truncate(out_r);
+            } else {
+                ptr[off] = @truncate(out_r);
+                ptr[off + 1] = @truncate(out_g);
+                ptr[off + 2] = @truncate(out_b);
+            }
+            if (bytes_pp == 4) ptr[off + 3] = 0xFF;
         }
     }
     total_draw_calls += 1;
@@ -650,12 +847,31 @@ pub fn addSpecularBand(x: i32, y: i32, w: i32, band_h: i32, intensity: u32) void
         var px: u32 = x0;
         while (px < x1) : (px += 1) {
             const off = py * fb_config.pitch + px * bytes_pp;
-            const cr = @min(@as(u32, ptr[off]) + boost, 255);
-            const cg = @min(@as(u32, ptr[off + 1]) + boost, 255);
-            const cb = @min(@as(u32, ptr[off + 2]) + boost, 255);
-            ptr[off] = @truncate(cr);
-            ptr[off + 1] = @truncate(cg);
-            ptr[off + 2] = @truncate(cb);
+            var r: u32 = undefined;
+            var g: u32 = undefined;
+            var b: u32 = undefined;
+            if (fb_config.pixel_bgr) {
+                b = @as(u32, ptr[off]);
+                g = @as(u32, ptr[off + 1]);
+                r = @as(u32, ptr[off + 2]);
+            } else {
+                r = @as(u32, ptr[off]);
+                g = @as(u32, ptr[off + 1]);
+                b = @as(u32, ptr[off + 2]);
+            }
+            r = @min(r + boost, 255);
+            g = @min(g + boost, 255);
+            b = @min(b + boost, 255);
+            if (fb_config.pixel_bgr) {
+                ptr[off] = @truncate(b);
+                ptr[off + 1] = @truncate(g);
+                ptr[off + 2] = @truncate(r);
+            } else {
+                ptr[off] = @truncate(r);
+                ptr[off + 1] = @truncate(g);
+                ptr[off + 2] = @truncate(b);
+            }
+            if (bytes_pp == 4) ptr[off + 3] = 0xFF;
         }
     }
 }
@@ -663,13 +879,47 @@ pub fn addSpecularBand(x: i32, y: i32, w: i32, band_h: i32, intensity: u32) void
 // ── Buffer Management ──
 
 pub fn flip() void {
+    if (double_buffer_active) {
+        const size = @as(usize, fb_config.pitch) * @as(usize, fb_config.height);
+        const dst: [*]u8 = @ptrFromInt(fb_config.address);
+        @memcpy(dst[0..size], back_buf[0..size]);
+    }
     dirty_count = 0;
     total_flips += 1;
 }
 
 pub fn flipDirty() void {
+    if (double_buffer_active) {
+        if (dirty_count == 0 or dirty_count >= MAX_DIRTY_RECTS) {
+            const size = @as(usize, fb_config.pitch) * @as(usize, fb_config.height);
+            const dst: [*]u8 = @ptrFromInt(fb_config.address);
+            @memcpy(dst[0..size], back_buf[0..size]);
+        } else {
+            const bytes_pp: usize = @as(usize, fb_config.bpp) / 8;
+            const dst_base: [*]u8 = @ptrFromInt(fb_config.address);
+            for (dirty_rects[0..dirty_count]) |r| {
+                const rx0: u32 = if (r.x < 0) 0 else @intCast(r.x);
+                const ry0: u32 = if (r.y < 0) 0 else @intCast(r.y);
+                const rw: u32 = if (r.w < 0) 0 else @intCast(r.w);
+                const rh: u32 = if (r.h < 0) 0 else @intCast(r.h);
+                const rx1: u32 = @min(rx0 + rw, fb_config.width);
+                const ry1: u32 = @min(ry0 + rh, fb_config.height);
+                if (rx0 >= rx1 or ry0 >= ry1) continue;
+                const row_bytes = @as(usize, rx1 - rx0) * bytes_pp;
+                var py: u32 = ry0;
+                while (py < ry1) : (py += 1) {
+                    const off = @as(usize, py) * @as(usize, fb_config.pitch) + @as(usize, rx0) * bytes_pp;
+                    @memcpy(dst_base[off .. off + row_bytes], back_buf[off .. off + row_bytes]);
+                }
+            }
+        }
+    }
     dirty_count = 0;
     total_flips += 1;
+}
+
+pub fn isDoubleBuffered() bool {
+    return double_buffer_active;
 }
 
 // ── IRP Dispatch ──
@@ -767,7 +1017,10 @@ pub fn getTotalFlips() u64 {
 
 // ── Initialization ──
 
-pub fn init(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
+pub fn init(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8, pixel_bgr: bool) void {
+    const required = @as(usize, pitch) * @as(usize, height);
+    double_buffer_active = (required > 0 and required <= BACK_BUF_MAX);
+
     fb_config = .{
         .address = addr,
         .width = width,
@@ -775,31 +1028,32 @@ pub fn init(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
         .pitch = pitch,
         .bpp = bpp,
         .pixel_format = if (bpp == 32) .xrgb8888 else if (bpp == 24) .rgb888 else .rgb565,
-        .double_buffer = false,
+        .double_buffer = double_buffer_active,
+        .pixel_bgr = pixel_bgr,
     };
 
     config_ready = (addr != 0 and width > 0 and height > 0 and bpp > 0);
 
     driver_idx = io.registerDriver("\\Driver\\Framebuf", fbDispatch) orelse {
         klog.err("Framebuffer: Failed to register IO driver (rendering still works)", .{});
-        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x", .{
-            width, height, bpp, pitch, addr,
+        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x, double_buf=%s", .{
+            width, height, bpp, pitch, addr, if (double_buffer_active) "ON" else "OFF",
         });
         return;
     };
 
     device_idx = io.createDevice("\\Device\\Framebuf0", .framebuffer, driver_idx) orelse {
         klog.err("Framebuffer: Failed to create IO device (rendering still works)", .{});
-        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x", .{
-            width, height, bpp, pitch, addr,
+        klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x, double_buf=%s", .{
+            width, height, bpp, pitch, addr, if (double_buffer_active) "ON" else "OFF",
         });
         return;
     };
 
     driver_initialized = true;
 
-    klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x", .{
-        width, height, bpp, pitch, addr,
+    klog.info("Framebuffer Driver: %ux%u@%ubpp, pitch=%u, addr=0x%x, double_buf=%s", .{
+        width, height, bpp, pitch, addr, if (double_buffer_active) "ON" else "OFF",
     });
 }
 

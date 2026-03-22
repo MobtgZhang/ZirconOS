@@ -1,0 +1,61 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="specBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a1a"/>
+      <stop offset="100%" stop-color="#0d1520"/>
+    </linearGradient>
+    <linearGradient id="band1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff006e" stop-opacity="0"/>
+      <stop offset="25%" stop-color="#ff006e" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#ff4d6d" stop-opacity="0.5"/>
+      <stop offset="75%" stop-color="#ff006e" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ff006e" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="band2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f7a41d" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#f7a41d" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#ffc107" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#f7a41d" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="band3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00e676" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#00e676" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#69f0ae" stop-opacity="0.45"/>
+      <stop offset="80%" stop-color="#00e676" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#00e676" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="band4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#60cdff" stop-opacity="0.4"/>
+      <stop offset="65%" stop-color="#0078d4" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#0078d4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="band5" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c4dff" stop-opacity="0"/>
+      <stop offset="25%" stop-color="#b388ff" stop-opacity="0.35"/>
+      <stop offset="75%" stop-color="#7c4dff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#7c4dff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="bandGlow">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#specBg)"/>
+
+  <!-- Spectrum bands -->
+  <g filter="url(#bandGlow)">
+    <path d="M0,250 C480,200 960,300 1440,220 C1920,140 1920,280 1920,280 L1920,320 C1440,360 960,270 480,340 C0,400 0,290 0,290 Z" fill="url(#band5)"/>
+    <path d="M0,380 C480,320 960,420 1440,350 C1920,280 1920,400 1920,400 L1920,440 C1440,480 960,390 480,460 C0,520 0,420 0,420 Z" fill="url(#band4)"/>
+    <path d="M0,500 C480,440 960,540 1440,470 C1920,400 1920,520 1920,520 L1920,560 C1440,600 960,510 480,580 C0,640 0,540 0,540 Z" fill="url(#band3)"/>
+    <path d="M0,620 C480,560 960,660 1440,590 C1920,520 1920,640 1920,640 L1920,680 C1440,720 960,630 480,700 C0,760 0,660 0,660 Z" fill="url(#band2)"/>
+    <path d="M0,740 C480,680 960,780 1440,710 C1920,640 1920,760 1920,760 L1920,800 C1440,840 960,750 480,820 C0,880 0,780 0,780 Z" fill="url(#band1)"/>
+  </g>
+
+  <!-- Micro dots -->
+  <circle cx="160" cy="100" r="0.8" fill="white" opacity="0.25"/>
+  <circle cx="480" cy="60" r="0.6" fill="white" opacity="0.2"/>
+  <circle cx="960" cy="80" r="1" fill="white" opacity="0.2"/>
+  <circle cx="1440" cy="50" r="0.7" fill="white" opacity="0.3"/>
+  <circle cx="1800" cy="100" r="0.9" fill="white" opacity="0.2"/>
+</svg>

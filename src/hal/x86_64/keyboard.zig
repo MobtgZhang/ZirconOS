@@ -17,6 +17,9 @@ var ctrl_held: bool = false;
 var caps_lock: bool = false;
 var initialized: bool = false;
 
+/// Ctrl+Shift+Esc → Task Manager (desktop shell; consumed via `consumeTaskMgrHotkey`)
+var taskmgr_hotkey_pending: bool = false;
+
 const scancode_normal: [128]u8 = blk: {
     var table = [_]u8{0} ** 128;
     table[0x02] = '1';
@@ -149,8 +152,11 @@ fn toLower(c: u8) u8 {
 }
 
 pub fn handleIrq() void {
-    const scancode = portio.inb(KB_DATA_PORT);
+    handleScancodeByte(portio.inb(KB_DATA_PORT));
+}
 
+/// Process one PS/2 scan code (also used when draining the 8042 buffer from the mouse poll path).
+pub fn handleScancodeByte(scancode: u8) void {
     if (scancode & 0x80 != 0) {
         const released = scancode & 0x7F;
         if (released == 0x2A or released == 0x36) shift_held = false;
@@ -169,6 +175,11 @@ pub fn handleIrq() void {
     if (scancode == 0x3A) {
         caps_lock = !caps_lock;
         return;
+    }
+
+    // Esc (make code 0x01): Task Manager shortcut when Ctrl+Shift held
+    if (scancode == 0x01 and ctrl_held and shift_held) {
+        taskmgr_hotkey_pending = true;
     }
 
     if (scancode >= 128) return;
@@ -216,4 +227,12 @@ pub fn hasData() bool {
 
 pub fn isInitialized() bool {
     return initialized;
+}
+
+pub fn consumeTaskMgrHotkey() bool {
+    if (taskmgr_hotkey_pending) {
+        taskmgr_hotkey_pending = false;
+        return true;
+    }
+    return false;
 }

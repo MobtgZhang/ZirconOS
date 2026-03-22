@@ -230,33 +230,84 @@ fn parseEdidBlock(raw: *const [EDID_SIZE]u8) EdidInfo {
 fn detectOutputs() void {
     output_count = 0;
 
-    var out = &outputs[output_count];
-    out.* = .{};
-    out.connector = .virtual;
-    out.status = .connected;
-    out.signal = .digital_tmds;
-    out.is_primary = true;
-    out.output_index = 0;
-    out.active_width = 1024;
-    out.active_height = 768;
-    out.active_refresh = 60;
-    out.active_bpp = 32;
+    // Primary: HDMI / DVI-TMDS (typical laptop dock + monitor)
+    {
+        var out = &outputs[output_count];
+        out.* = .{};
+        out.connector = .hdmi_a;
+        out.status = .connected;
+        out.signal = .digital_tmds;
+        out.is_primary = true;
+        out.output_index = 0;
+        out.active_width = 1024;
+        out.active_height = 768;
+        out.active_refresh = 60;
+        out.active_bpp = 32;
 
-    out.edid.valid = true;
-    out.edid.preferred_width = 1024;
-    out.edid.preferred_height = 768;
-    out.edid.preferred_refresh = 60;
-    out.edid.digital_input = true;
-    out.edid.color_depth = 8;
-    const name = "QEMU Monitor";
-    @memcpy(out.edid.monitor_name[0..name.len], name);
-    out.edid.monitor_name_len = name.len;
+        out.edid.valid = true;
+        out.edid.preferred_width = 1024;
+        out.edid.preferred_height = 768;
+        out.edid.preferred_refresh = 60;
+        out.edid.digital_input = true;
+        out.edid.color_depth = 8;
+        const name = "QEMU Monitor";
+        @memcpy(out.edid.monitor_name[0..name.len], name);
+        out.edid.monitor_name_len = name.len;
 
-    out.hdmi_config.enabled = true;
-    out.hdmi_config.hdmi_version = .hdmi_1_4;
+        out.hdmi_config.enabled = true;
+        out.hdmi_config.hdmi_version = .hdmi_1_4;
 
-    output_count = 1;
+        output_count += 1;
+    }
+
+    // Secondary: DisplayPort (stub — MST/hotplug not wired; IOCTL surface reserved)
+    if (output_count < MAX_OUTPUTS) {
+        var out = &outputs[output_count];
+        out.* = .{};
+        out.connector = .display_port;
+        out.status = .connected;
+        out.signal = .digital_dp;
+        out.is_primary = false;
+        out.output_index = 1;
+        out.active_width = 1024;
+        out.active_height = 768;
+        out.active_refresh = 60;
+        out.active_bpp = 32;
+        out.edid.valid = true;
+        out.edid.preferred_width = 1024;
+        out.edid.preferred_height = 768;
+        out.edid.preferred_refresh = 60;
+        out.edid.digital_input = true;
+        out.edid.color_depth = 8;
+        const name = "DisplayPort";
+        @memcpy(out.edid.monitor_name[0..name.len], name);
+        out.edid.monitor_name_len = name.len;
+        output_count += 1;
+    }
+
     primary_output = 0;
+}
+
+/// Called when GOP/Multiboot framebuffer mode is known (matches primary sink).
+pub fn syncFramebufferMode(w: u32, h: u32, bpp: u8) void {
+    if (output_count == 0) return;
+    outputs[0].active_width = w;
+    outputs[0].active_height = h;
+    outputs[0].active_bpp = bpp;
+    if (outputs[0].edid.valid) {
+        outputs[0].edid.preferred_width = w;
+        outputs[0].edid.preferred_height = h;
+    }
+    // Stub: mirror mode — keep secondary in sync for enumeration demos
+    if (output_count > 1) {
+        outputs[1].active_width = w;
+        outputs[1].active_height = h;
+        outputs[1].active_bpp = bpp;
+        if (outputs[1].edid.valid) {
+            outputs[1].edid.preferred_width = w;
+            outputs[1].edid.preferred_height = h;
+        }
+    }
 }
 
 // ── IRP Dispatch ──

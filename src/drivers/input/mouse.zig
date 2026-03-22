@@ -1,8 +1,6 @@
-//! PS/2 Mouse Driver
-//! Handles PS/2 mouse input via IRQ12 (i8042 auxiliary port).
-//! Provides absolute/relative position tracking, button states,
-//! and a mouse event queue for the ZirconOS desktop compositor.
-//! Reference: OSDev PS/2 Mouse specification (public domain)
+//! PS/2 mouse class driver (NT6: mouclass + i8042prt auxiliary device)
+//! IRQ12 / i8042 aux port; absolute/relative state and event queue for the shell/DWM.
+//! Registers `\\Driver\\Mouse` / `\\Device\\Mouse0`. Reference: OSDev PS/2 mouse.
 
 const builtin = @import("builtin");
 const io = @import("../../io/io.zig");
@@ -12,8 +10,17 @@ const portio = if (builtin.target.cpu.arch == .x86_64)
 else
     struct {
         pub fn outb(_: u16, _: u8) void {}
-        pub fn inb(_: u16) u8 { return 0; }
+        pub fn inb(_: u16) u8 {
+            return 0;
+        }
         pub fn ioWait() void {}
+    };
+
+const hal_kbd = if (builtin.target.cpu.arch == .x86_64)
+    @import("../../hal/x86_64/keyboard.zig")
+else
+    struct {
+        pub fn handleScancodeByte(_: u8) void {}
     };
 
 const KB_DATA_PORT: u16 = 0x60;
@@ -51,14 +58,14 @@ pub const MouseState = struct {
     middle_pressed: bool = false,
     screen_width: i32 = 1280,
     screen_height: i32 = 800,
-    sensitivity: i32 = 10,
+    sensitivity: i32 = 36,
     acceleration_enabled: bool = true,
-    acceleration_threshold: i32 = 6,
-    acceleration_curve: i32 = 3,
-    interpolation_enabled: bool = true,
-    interpolation_steps: u8 = 6,
+    acceleration_threshold: i32 = 3,
+    acceleration_curve: i32 = 5,
+    interpolation_enabled: bool = false,
+    interpolation_steps: u8 = 1,
     interpolation_idx: u8 = 0,
-    smoothing_enabled: bool = true,
+    smoothing_enabled: bool = false,
     cursor_moved: bool = false,
 };
 
@@ -117,12 +124,36 @@ fn mouseWrite(byte: u8) u8 {
     return readData();
 }
 
+/// IRQ12：尽可能排空辅助端口上的鼠标数据包（部分虚拟机合并中断时单 IRQ 只处理一字节会丢包）。
 pub fn handleIrq() void {
-    const status = portio.inb(KB_STATUS_PORT);
-    if (status & 0x20 == 0) return;
+    drainAuxPending();
+}
 
-    const data = portio.inb(KB_DATA_PORT);
+fn drainAuxPending() void {
+    while (true) {
+        const status = portio.inb(KB_STATUS_PORT);
+        if (status & 0x01 == 0) return;
+        if (status & 0x20 == 0) return;
+        processAuxByte(portio.inb(KB_DATA_PORT));
+    }
+}
 
+/// 空闲时轮询 8042 输出缓冲：补收未触发 IRQ 的字节，并处理混排在键盘前的数据。
+pub fn poll() void {
+    if (builtin.target.cpu.arch != .x86_64) return;
+    while (true) {
+        const status = portio.inb(KB_STATUS_PORT);
+        if (status & 0x01 == 0) return;
+        const data = portio.inb(KB_DATA_PORT);
+        if (status & 0x20 != 0) {
+            processAuxByte(data);
+        } else {
+            hal_kbd.handleScancodeByte(data);
+        }
+    }
+}
+
+fn processAuxByte(data: u8) void {
     if (packet_idx == 0 and (data & 0x08 == 0)) return;
 
     packet_buf[packet_idx] = data;
@@ -161,17 +192,17 @@ pub fn handleIrq() void {
     var dx_scaled: i32 = @as(i32, event.dx);
     var dy_scaled: i32 = @as(i32, event.dy);
 
-    // Multi-tier acceleration curve (enhanced pointer ballistics)
     if (mouse_state.acceleration_enabled) {
         const speed_sq = dx_scaled * dx_scaled + dy_scaled * dy_scaled;
         const thresh = mouse_state.acceleration_threshold;
         const thresh_sq = thresh * thresh;
-        if (speed_sq > thresh_sq * 4) {
-            // Very fast movement: 2x boost
+        if (speed_sq > thresh_sq * 9) {
+            dx_scaled = dx_scaled * 3;
+            dy_scaled = dy_scaled * 3;
+        } else if (speed_sq > thresh_sq * 4) {
             dx_scaled = dx_scaled * 2;
             dy_scaled = dy_scaled * 2;
         } else if (speed_sq > thresh_sq) {
-            // Moderate movement: 1.5x boost
             dx_scaled = dx_scaled + @divTrunc(dx_scaled, 2);
             dy_scaled = dy_scaled + @divTrunc(dy_scaled, 2);
         }
@@ -180,7 +211,6 @@ pub fn handleIrq() void {
     dx_scaled = @divTrunc(dx_scaled * mouse_state.sensitivity, 10);
     dy_scaled = @divTrunc(dy_scaled * mouse_state.sensitivity, 10);
 
-    // Motion smoothing: blend with previous delta to reduce jitter
     if (mouse_state.smoothing_enabled) {
         dx_scaled = @divTrunc(dx_scaled * 3 + mouse_state.prev_dx, 4);
         dy_scaled = @divTrunc(dy_scaled * 3 + mouse_state.prev_dy, 4);
@@ -240,7 +270,7 @@ pub fn interpolateStep() void {
 
     clampPosition();
     mouse_state.interpolation_idx -= 1;
-    mouse_state.cursor_moved = true;
+    // cursor_moved 仅由 IRQ 数据包设置；此处不置位，避免同一帧内多次触发全屏重绘
 }
 
 pub fn isInterpolating() bool {
@@ -267,6 +297,10 @@ pub fn setAcceleration(enabled: bool, threshold: i32) void {
 pub fn setInterpolation(enabled: bool, steps: u8) void {
     mouse_state.interpolation_enabled = enabled;
     mouse_state.interpolation_steps = if (steps < 1) 1 else if (steps > 8) 8 else steps;
+}
+
+pub fn setSmoothing(enabled: bool) void {
+    mouse_state.smoothing_enabled = enabled;
 }
 
 fn pushEvent(event: MouseEvent) void {
@@ -365,9 +399,18 @@ fn handleIoctl(irp: *io.Irp) io.IoStatus {
             return .success;
         },
         IOCTL_MOUSE_RESET => {
+            const sw = mouse_state.screen_width;
+            const sh = mouse_state.screen_height;
             queue_head = 0;
             queue_tail = 0;
+            packet_idx = 0;
             mouse_state = .{};
+            mouse_state.screen_width = sw;
+            mouse_state.screen_height = sh;
+            mouse_state.x = @divTrunc(sw, 2);
+            mouse_state.y = @divTrunc(sh, 2);
+            mouse_state.raw_x = mouse_state.x;
+            mouse_state.raw_y = mouse_state.y;
             irp.complete(.success, 0);
             return .success;
         },
@@ -387,6 +430,8 @@ pub fn getTotalEvents() u64 {
 }
 
 pub fn init() void {
+    if (driver_initialized) return;
+
     sendCommand(0xA8);
     portio.ioWait();
 

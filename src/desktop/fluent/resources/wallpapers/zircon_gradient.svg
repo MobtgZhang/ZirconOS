@@ -1,0 +1,39 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradBg" x1="0%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#1a0533"/>
+      <stop offset="25%" stop-color="#2d1b69"/>
+      <stop offset="50%" stop-color="#0078d4"/>
+      <stop offset="75%" stop-color="#00b4d8"/>
+      <stop offset="100%" stop-color="#48cae4"/>
+    </linearGradient>
+    <radialGradient id="centerLight" cx="55%" cy="50%" r="45%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="meshA" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6c63ff" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#6c63ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="meshB" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#f72585" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#f72585" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#gradBg)"/>
+  <ellipse cx="1056" cy="540" rx="800" ry="500" fill="url(#centerLight)"/>
+
+  <!-- Mesh gradient blobs -->
+  <ellipse cx="300" cy="800" rx="500" ry="400" fill="url(#meshA)"/>
+  <ellipse cx="1600" cy="300" rx="400" ry="350" fill="url(#meshB)"/>
+
+  <!-- Soft flowing shapes -->
+  <path d="M0,700 Q480,550 960,680 T1920,600 L1920,1080 L0,1080 Z" fill="#0a0a2e" opacity="0.3"/>
+  <path d="M0,800 Q480,700 960,790 T1920,720 L1920,1080 L0,1080 Z" fill="#060620" opacity="0.4"/>
+
+  <!-- Noise approximation dots -->
+  <circle cx="480" cy="200" r="1" fill="white" opacity="0.15"/>
+  <circle cx="960" cy="120" r="0.8" fill="white" opacity="0.1"/>
+  <circle cx="1440" cy="250" r="1.2" fill="white" opacity="0.12"/>
+</svg>

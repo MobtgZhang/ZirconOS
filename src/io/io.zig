@@ -58,6 +58,14 @@ pub const DeviceType = enum(u32) {
     framebuffer = 7,
     mouse = 8,
     audio = 9,
+    /// PCI/PCIe bus (config space access; NT: bus driver / FDO)
+    pci_bus = 10,
+    /// 8254 PIT — kernel tick source (NT: HAL profile timer / profile driver)
+    pit_timer = 11,
+    /// MC146818 RTC / CMOS (NT: \Device\Rtc)
+    rtc_clock = 12,
+    /// USB xHCI/EHCI root (stub until PnP + MMIO bring-up)
+    usb_host = 13,
 };
 
 pub const DeviceObject = struct {
@@ -72,7 +80,7 @@ pub const DeviceObject = struct {
 
 pub const DriverDispatchFn = *const fn (*Irp) IoStatus;
 
-pub const MAX_DRIVERS: usize = 16;
+pub const MAX_DRIVERS: usize = 24;
 
 pub const DriverObject = struct {
     header: ob.ObjectHeader = .{ .obj_type = .driver },

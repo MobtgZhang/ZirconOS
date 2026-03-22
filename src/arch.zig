@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 pub const impl = switch (builtin.target.cpu.arch) {
     .x86_64 => @import("arch/x86_64/mod.zig"),
     .aarch64 => @import("arch/aarch64/mod.zig"),
-    .loongarch64 => @import("arch/loong64/mod.zig"),
+    .loongarch64 => @import("arch/loongarch64/mod.zig"),
     .riscv64 => @import("arch/riscv64/mod.zig"),
     .mips64el => @import("arch/mips64el/mod.zig"),
     else => @compileError("Unsupported architecture"),
@@ -26,6 +26,11 @@ pub fn halt() noreturn {
 
 pub fn shutdown() noreturn {
     impl.shutdown();
+}
+
+/// 待机：CPU 低功耗空闲（无 ACPI S3 时等价于 halt/wfi；可唤醒路径由后续电源管理接入）。
+pub fn standby() noreturn {
+    impl.standby();
 }
 
 pub fn reset() noreturn {
@@ -103,6 +108,13 @@ pub fn readInputChar() ?u8 {
         return impl.readInputChar();
     }
     return null;
+}
+
+pub fn consumeTaskMgrHotkey() bool {
+    if (@hasDecl(impl, "consumeTaskMgrHotkey")) {
+        return impl.consumeTaskMgrHotkey();
+    }
+    return false;
 }
 
 pub fn initFramebuffer(addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {

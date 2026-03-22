@@ -1,25 +1,49 @@
 //! ZirconOS Driver Module Root
-//! Provides centralized initialization and access to all kernel-mode drivers.
-//! Reference: ReactOS drivers/ directory layout and NT driver model
+//! Centralized kernel-mode driver load order (NT 6.x–style: bus → class → PnP stack).
+//! Reference: WDM driver model, ReactOS `drivers/` tree, Windows Driver Kit (KMDF concepts
+//! mapped onto this kernel’s `io.Irp` + `registerDriver` / `createDevice`).
 //!
-//! Driver categories:
-//!   video/   - Display drivers (VGA, HDMI, Framebuffer, Display Manager)
-//!   audio/   - Audio drivers (AC97, event system)
-//!   input/   - Input drivers (PS/2 Mouse)
+//! Categories:
+//!   bus/      - PCI/PCIe configuration (Type 1 host access)
+//!   storage/  - ATA/IDE class driver
+//!   timer/    - PIT (HAL tick), RTC (CMOS)
+//!   video/    - VGA, HDMI, Framebuffer, display manager
+//!   audio/    - AC’97 (PortCls-style IOCTL surface)
+//!   input/    - PS/2 keyboard class, PS/2 mouse
 //!
-//! Each driver registers with the I/O Manager as a DriverObject + DeviceObject
-//! and handles IRPs through its dispatch function.
+//! Each driver registers a `DriverObject` dispatch routine and one or more `DeviceObject`s.
 
 const builtin = @import("builtin");
 const klog = @import("../rtl/klog.zig");
 
 const is_x86 = (builtin.target.cpu.arch == .x86_64);
 
+pub const bus = if (is_x86) struct {
+    pub const pcie = @import("bus/pcie.zig");
+    pub const i2c = @import("bus/i2c.zig");
+    pub const spi = @import("bus/spi.zig");
+    pub const serial_bus = @import("bus/serial_bus.zig");
+} else struct {
+    pub const i2c = @import("bus/i2c.zig");
+    pub const spi = @import("bus/spi.zig");
+};
+
+pub const timer = if (is_x86) struct {
+    pub const pit_timer = @import("timer/pit_timer.zig");
+    pub const rtc = @import("timer/rtc.zig");
+} else struct {};
+
+pub const storage = if (is_x86) struct {
+    pub const ata = @import("storage/ata.zig");
+} else struct {};
+
 pub const video = struct {
     pub const vga = @import("video/vga.zig");
     pub const hdmi = @import("video/hdmi.zig");
     pub const framebuffer = @import("video/framebuffer.zig");
     pub const display = @import("video/display.zig");
+    /// Shell UI strings (English default); future MUI/language packs extend `shell_strings.zig`.
+    pub const shell_strings = @import("video/shell_strings.zig");
     pub const icons = @import("video/icons.zig");
     pub const startmenu = @import("video/startmenu.zig");
     pub const dwm_compositor = @import("video/dwm_compositor.zig");
@@ -33,15 +57,33 @@ pub const audio = struct {
 };
 
 pub const input = if (is_x86) struct {
+    pub const kbd = @import("input/kbd.zig");
     pub const mouse = @import("input/mouse.zig");
 } else struct {};
+
+pub const usb = @import("usb/usb.zig");
+
+pub const net = struct {
+    pub const ndis = @import("net/ndis.zig");
+};
 
 var drivers_initialized: bool = false;
 
 pub fn init() void {
     klog.info("Drivers: Initializing driver stack...", .{});
 
+    if (is_x86) {
+        bus.pcie.init();
+        bus.serial_bus.init();
+        storage.ata.init();
+        timer.pit_timer.init();
+        timer.rtc.init();
+    }
+
     video.display.init();
+
+    net.ndis.init();
+    usb.init();
 
     drivers_initialized = true;
 
@@ -50,13 +92,25 @@ pub fn init() void {
         if (video.hdmi.isInitialized()) "yes" else "no",
         if (video.display.isInitialized()) "yes" else "no",
     });
+
+    if (is_x86) {
+        klog.info("Drivers: Bus/Timer/Storage (PCI=%s, PIT=%s, RTC=%s, ATA=%s, USB=%s)", .{
+            if (bus.pcie.isInitialized()) "yes" else "no",
+            if (timer.pit_timer.isInitialized()) "yes" else "no",
+            if (timer.rtc.isInitialized()) "yes" else "no",
+            if (storage.ata.isInitialized()) "yes" else "no",
+            if (usb.isInitialized()) "yes" else "no",
+        });
+    }
 }
 
 pub fn initInputDrivers() void {
     if (is_x86) {
+        input.kbd.init();
         input.mouse.init();
 
-        klog.info("Drivers: Input ready (Mouse=%s)", .{
+        klog.info("Drivers: Input ready (Kbd=%s, Mouse=%s)", .{
+            if (input.kbd.isInitialized()) "yes" else "no",
             if (input.mouse.isInitialized()) "yes" else "no",
         });
     } else {
@@ -72,8 +126,9 @@ pub fn initAudioDrivers() void {
     });
 }
 
-pub fn initDesktopMode(fb_addr: usize, width: u32, height: u32, pitch: u32, bpp: u8) void {
-    video.display.initDesktopMode(fb_addr, width, height, pitch, bpp);
+pub fn initDesktopMode(fb_addr: usize, width: u32, height: u32, pitch: u32, bpp: u8, pixel_bgr: bool) void {
+    video.display.initDesktopMode(fb_addr, width, height, pitch, bpp, pixel_bgr);
+    video.hdmi.syncFramebufferMode(width, height, bpp);
 
     if (is_x86) {
         input.mouse.setScreenBounds(@intCast(width), @intCast(height));

@@ -77,6 +77,8 @@ pub const FramebufferInfo = struct {
     height: u32,
     bpp: u8,
     fb_type: u8, // 0=indexed, 1=RGB, 2=EGA text
+    /// 与 multiboot2 标签字节 30 一致：1=BGR（首字节蓝），0=RGB（首字节红）
+    pixel_bgr: u8 = 1,
 };
 
 pub const DesktopTheme = enum {
@@ -111,11 +113,11 @@ pub const BootInfo = struct {
     pub fn getMmapEntry(self: BootInfo, i: usize) ?MmapEntry {
         if (i >= self.mmap_entry_count or self.mmap_entry_size < 24) return null;
         const ptr = self.mmap_ptr + i * self.mmap_entry_size;
-        return @as(*const MmapEntry, @alignCast(@ptrCast(ptr))).*;
+        return @as(*const MmapEntry, @ptrCast(@alignCast(ptr))).*;
     }
 };
 
-pub fn parse(phys_addr: usize) ?BootInfo {
+pub fn parse(_: u32, phys_addr: usize) ?BootInfo {
     const addr = phys_addr & ~@as(usize, 7);
     const header = @as(*const BootInfoHeader, @ptrFromInt(addr));
     if (header.total_size < 8) return null;
@@ -169,13 +171,15 @@ pub fn parse(phys_addr: usize) ?BootInfo {
                 //   20: width(u32) 24: height(u32) 28: bpp(u8) 29: fb_type(u8)
                 const base = addr + offset;
                 const p8 = @as([*]const u8, @ptrFromInt(base));
-                const fb_addr_lo = @as(*const u32, @alignCast(@ptrCast(p8 + 8))).*;
-                const fb_addr_hi = @as(*const u32, @alignCast(@ptrCast(p8 + 12))).*;
-                const fb_pitch = @as(*const u32, @alignCast(@ptrCast(p8 + 16))).*;
-                const fb_width = @as(*const u32, @alignCast(@ptrCast(p8 + 20))).*;
-                const fb_height = @as(*const u32, @alignCast(@ptrCast(p8 + 24))).*;
+                const fb_addr_lo = @as(*const u32, @ptrCast(@alignCast(p8 + 8))).*;
+                const fb_addr_hi = @as(*const u32, @ptrCast(@alignCast(p8 + 12))).*;
+                const fb_pitch = @as(*const u32, @ptrCast(@alignCast(p8 + 16))).*;
+                const fb_width = @as(*const u32, @ptrCast(@alignCast(p8 + 20))).*;
+                const fb_height = @as(*const u32, @ptrCast(@alignCast(p8 + 24))).*;
                 const fb_bpp = p8[28];
                 const fb_type_val = p8[29];
+                const ext_valid = p8[31] == 0x5A;
+                const pixel_bgr: u8 = if (ext_valid) (if (p8[30] != 0) 1 else 0) else 1;
                 info.fb_info = .{
                     .addr = @as(u64, fb_addr_hi) << 32 | @as(u64, fb_addr_lo),
                     .pitch = fb_pitch,
@@ -183,6 +187,7 @@ pub fn parse(phys_addr: usize) ?BootInfo {
                     .height = fb_height,
                     .bpp = fb_bpp,
                     .fb_type = fb_type_val,
+                    .pixel_bgr = pixel_bgr,
                 };
             },
             else => {},
@@ -229,7 +234,9 @@ fn parseCmdlineBootMode(cmdline: []const u8) BootMode {
         if (strEql(val, "cmd")) return .cmd;
         if (strEql(val, "powershell")) return .powershell;
     }
-    if (parseCmdlineValue(cmdline, "desktop")) |_| {
+    if (parseCmdlineValue(cmdline, "desktop")) |val| {
+        // desktop=none means "no graphical shell" — stay in normal text path, not GUI session.
+        if (strEql(val, "none")) return .normal;
         return .desktop;
     }
     return .normal;
@@ -237,6 +244,7 @@ fn parseCmdlineBootMode(cmdline: []const u8) BootMode {
 
 fn parseCmdlineDesktop(cmdline: []const u8) DesktopTheme {
     if (parseCmdlineValue(cmdline, "desktop")) |val| {
+        if (strEql(val, "none")) return .none;
         if (strEql(val, "classic")) return .classic;
         if (strEql(val, "luna")) return .luna;
         if (strEql(val, "aero")) return .aero;

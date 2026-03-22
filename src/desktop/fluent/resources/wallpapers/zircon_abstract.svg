@@ -1,0 +1,53 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="absBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="50%" stop-color="#0f3460"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="shapeA" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#60cdff" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="shapeB" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f7a41d" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#e07020" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="shapeC" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c4dff" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#b388ff" stop-opacity="0.05"/>
+    </linearGradient>
+    <filter id="shapeBlur">
+      <feGaussianBlur stdDeviation="60"/>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#absBg)"/>
+
+  <!-- Large abstract blurred shapes -->
+  <g filter="url(#shapeBlur)">
+    <ellipse cx="480" cy="300" rx="500" ry="350" fill="url(#shapeA)"/>
+    <ellipse cx="1400" cy="700" rx="450" ry="380" fill="url(#shapeB)"/>
+    <ellipse cx="1100" cy="200" rx="350" ry="280" fill="url(#shapeC)"/>
+    <ellipse cx="200" cy="800" rx="400" ry="300" fill="#0078d4" opacity="0.12"/>
+  </g>
+
+  <!-- Geometric accent lines -->
+  <g stroke="white" stroke-width="0.5" fill="none" opacity="0.06">
+    <line x1="0" y1="360" x2="1920" y2="360"/>
+    <line x1="0" y1="720" x2="1920" y2="720"/>
+    <line x1="640" y1="0" x2="640" y2="1080"/>
+    <line x1="1280" y1="0" x2="1280" y2="1080"/>
+    <circle cx="640" cy="360" r="200"/>
+    <circle cx="1280" cy="720" r="160"/>
+  </g>
+
+  <!-- Floating particles -->
+  <circle cx="400" cy="250" r="2" fill="#60cdff" opacity="0.3"/>
+  <circle cx="800" cy="150" r="1.5" fill="#0078d4" opacity="0.25"/>
+  <circle cx="1200" cy="350" r="2.5" fill="white" opacity="0.15"/>
+  <circle cx="1600" cy="200" r="1.8" fill="#f7a41d" opacity="0.2"/>
+  <circle cx="300" cy="600" r="1.2" fill="white" opacity="0.2"/>
+  <circle cx="1000" cy="500" r="3" fill="#0078d4" opacity="0.1"/>
+  <circle cx="1500" cy="800" r="2" fill="#b388ff" opacity="0.15"/>
+</svg>

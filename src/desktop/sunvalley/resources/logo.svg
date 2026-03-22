@@ -1,0 +1,151 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', 'SF Pro Display', system-ui, sans-serif">
+  <defs>
+    <linearGradient id="sv_bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A1628"/>
+      <stop offset="50%" stop-color="#0E1E36"/>
+      <stop offset="100%" stop-color="#061018"/>
+    </linearGradient>
+    <linearGradient id="sv_mica" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4CB0E8" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#78CCF0" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="sv_crystal_top" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#B8E4FF"/>
+      <stop offset="100%" stop-color="#68B8E0"/>
+    </linearGradient>
+    <linearGradient id="sv_crystal_left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1A5A8C"/>
+      <stop offset="100%" stop-color="#2878B0"/>
+    </linearGradient>
+    <linearGradient id="sv_crystal_right" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5CB8E8"/>
+      <stop offset="100%" stop-color="#3898D0"/>
+    </linearGradient>
+    <linearGradient id="sv_crystal_bottom" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#185880"/>
+      <stop offset="100%" stop-color="#0C3050"/>
+    </linearGradient>
+    <linearGradient id="sv_inner_glow" x1="20%" y1="10%" x2="70%" y2="80%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sv_text" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#68B8E0"/>
+      <stop offset="50%" stop-color="#C8E8FF"/>
+      <stop offset="100%" stop-color="#68B8E0"/>
+    </linearGradient>
+    <radialGradient id="sv_glow" cx="50%" cy="45%" r="35%">
+      <stop offset="0%" stop-color="#4CB0E8" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#4CB0E8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sv_warm" cx="65%" cy="35%" r="25%">
+      <stop offset="0%" stop-color="#F0A030" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#F0A030" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="sv_shadow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="sv_soft">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="sv_round">
+      <rect x="0" y="0" width="512" height="512" rx="64" ry="64"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#sv_round)">
+    <rect width="512" height="512" fill="url(#sv_bg)"/>
+    <rect width="512" height="512" fill="url(#sv_mica)"/>
+
+    <!-- Subtle mica layer bands -->
+    <rect x="0" y="160" width="512" height="200" fill="url(#sv_mica)" opacity="0.4"/>
+
+    <!-- Ambient glow -->
+    <circle cx="256" cy="220" r="180" fill="url(#sv_glow)"/>
+    <circle cx="320" cy="190" r="100" fill="url(#sv_warm)"/>
+
+    <!-- Floating particles -->
+    <circle cx="80" cy="70" r="1.2" fill="#4CB0E8" opacity="0.4"/>
+    <circle cx="430" cy="90" r="1" fill="#78CCF0" opacity="0.35"/>
+    <circle cx="60" cy="340" r="0.9" fill="#4CB0E8" opacity="0.3"/>
+    <circle cx="450" cy="380" r="1.1" fill="#68B8E0" opacity="0.4"/>
+    <circle cx="180" cy="40" r="0.8" fill="white" opacity="0.3"/>
+    <circle cx="370" cy="30" r="1" fill="white" opacity="0.25"/>
+    <circle cx="490" cy="240" r="0.7" fill="#78CCF0" opacity="0.35"/>
+    <circle cx="30" cy="200" r="0.9" fill="white" opacity="0.3"/>
+
+    <!-- Rounded layered rectangles (Mica depth feel) -->
+    <rect x="140" y="130" width="232" height="180" rx="8" fill="none" stroke="#4CB0E8" stroke-width="0.5" opacity="0.12"/>
+    <rect x="150" y="140" width="212" height="160" rx="8" fill="none" stroke="#78CCF0" stroke-width="0.4" opacity="0.08"/>
+
+    <!-- ===== ZIRCON CRYSTAL ===== -->
+    <g filter="url(#sv_shadow)">
+      <!-- Bottom pavilion -->
+      <polygon points="256,330 155,215 200,252" fill="url(#sv_crystal_left)" opacity="0.92"/>
+      <polygon points="256,330 357,215 312,252" fill="url(#sv_crystal_right)" opacity="0.92"/>
+      <polygon points="256,330 200,252 312,252" fill="url(#sv_crystal_bottom)" opacity="0.95"/>
+
+      <!-- Girdle band -->
+      <polygon points="155,215 180,198 332,198 357,215 312,252 200,252" fill="#3898D0" opacity="0.9"/>
+
+      <!-- Crown facets -->
+      <polygon points="155,215 180,198 210,140 185,155" fill="url(#sv_crystal_left)" opacity="0.88"/>
+      <polygon points="357,215 332,198 302,140 327,155" fill="url(#sv_crystal_right)" opacity="0.88"/>
+      <polygon points="180,198 210,140 256,122 256,152" fill="#4AA8D8" opacity="0.9"/>
+      <polygon points="332,198 302,140 256,122 256,152" fill="#5CB8E8" opacity="0.9"/>
+
+      <!-- Table (top face) -->
+      <polygon points="185,155 210,140 256,122 302,140 327,155 312,175 256,180 200,175" fill="url(#sv_crystal_top)" opacity="0.95"/>
+
+      <!-- Inner shine -->
+      <polygon points="200,155 218,142 256,132 290,144 306,160 256,166 212,162" fill="url(#sv_inner_glow)" opacity="0.5"/>
+    </g>
+
+    <!-- Z mark on crystal -->
+    <g filter="url(#sv_soft)">
+      <line x1="230" y1="143" x2="282" y2="143" stroke="#0A2A50" stroke-width="5" stroke-linecap="round"/>
+      <line x1="282" y1="143" x2="230" y2="167" stroke="#0A2A50" stroke-width="5" stroke-linecap="round"/>
+      <line x1="230" y1="167" x2="282" y2="167" stroke="#0A2A50" stroke-width="5" stroke-linecap="round"/>
+      <line x1="228" y1="141" x2="280" y2="141" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+      <line x1="280" y1="141" x2="228" y2="165" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+      <line x1="228" y1="165" x2="280" y2="165" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    </g>
+
+    <!-- Facet edges -->
+    <g stroke="#88D0F0" stroke-width="0.7" fill="none" opacity="0.45">
+      <line x1="185" y1="155" x2="155" y2="215"/>
+      <line x1="327" y1="155" x2="357" y2="215"/>
+      <line x1="200" y1="175" x2="155" y2="215"/>
+      <line x1="312" y1="175" x2="357" y2="215"/>
+      <line x1="155" y1="215" x2="200" y2="252"/>
+      <line x1="357" y1="215" x2="312" y2="252"/>
+      <line x1="200" y1="252" x2="256" y2="330"/>
+      <line x1="312" y1="252" x2="256" y2="330"/>
+      <line x1="256" y1="180" x2="256" y2="330"/>
+      <line x1="200" y1="175" x2="200" y2="252"/>
+      <line x1="312" y1="175" x2="312" y2="252"/>
+    </g>
+
+    <!-- Sparkle points -->
+    <circle cx="256" cy="122" r="3" fill="white" opacity="0.9"/>
+    <circle cx="185" cy="155" r="2" fill="white" opacity="0.65"/>
+    <circle cx="327" cy="155" r="2" fill="white" opacity="0.65"/>
+    <circle cx="155" cy="215" r="1.5" fill="#68B8E0" opacity="0.5"/>
+    <circle cx="357" cy="215" r="1.5" fill="#68B8E0" opacity="0.5"/>
+
+    <!-- Warm accent sparkles (Zig nod) -->
+    <circle cx="380" cy="175" r="3.5" fill="#F0A030" opacity="0.7" filter="url(#sv_soft)"/>
+    <circle cx="130" cy="270" r="2.5" fill="#F0A030" opacity="0.6" filter="url(#sv_soft)"/>
+    <circle cx="375" cy="260" r="2" fill="#F0A030" opacity="0.5"/>
+
+    <!-- ===== Text ===== -->
+    <text x="256" y="388" text-anchor="middle" font-size="38" font-weight="600" letter-spacing="4" fill="url(#sv_text)">ZirconOS</text>
+    <text x="256" y="414" text-anchor="middle" font-size="11" font-weight="300" letter-spacing="4" fill="#78CCF0" opacity="0.6">MICA � ROUNDED � LAYERED DEPTH</text>
+
+    <!-- Version badge with rounded corners -->
+    <rect x="218" y="428" width="76" height="22" rx="11" fill="#1A5A8C" opacity="0.4"/>
+    <text x="256" y="443" text-anchor="middle" font-size="10" font-weight="500" letter-spacing="2.5" fill="#A0D8F0" opacity="0.85">v 1.0</text>
+  </g>
+</svg>

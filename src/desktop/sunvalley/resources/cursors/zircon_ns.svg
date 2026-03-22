@@ -1,0 +1,13 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="svNsShadow">
+      <feDropShadow dx="0.4" dy="0.5" stdDeviation="0.5" flood-color="#0A1628" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <g filter="url(#svNsShadow)">
+    <path d="M16,3 L11,9 L14,9 L14,23 L11,23 L16,29 L21,23 L18,23 L18,9 L21,9 Z"
+          fill="#1a1a1a" stroke="#0C1E36" stroke-width="0.9" stroke-linejoin="round"/>
+    <path d="M16,4.5 L12,9.5 L14.5,9.5 L14.5,22.5 L12,22.5 L16,27.5 L20,22.5 L17.5,22.5 L17.5,9.5 L20,9.5 Z"
+          fill="white" stroke="#4CB0E8" stroke-width="0.3" stroke-opacity="0.25" stroke-linejoin="round"/>
+  </g>
+</svg>

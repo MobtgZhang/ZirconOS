@@ -2,13 +2,13 @@
 //! Each theme (Classic, Luna, Aero, Modern, Fluent, SunValley) has its own
 //! distinct icon set with unique palette and pixel design.
 //!
-//! Icon resources are provided by 3rdparty theme packages:
-//!   ZirconOSAero/resources/icons/       — 48×48 SVG crystal/glass style
-//!   ZirconOSFluent/resources/icons/     — 32×32 SVG outlined/filled style
-//!   ZirconOSSunValley/resources/icons/  — 32×32 SVG thin outline/rounded
-//!   ZirconOSClassic/resources/icons/    — 32×32 SVG 16-color retro style
-//!   ZirconOSLuna/resources/icons/       — 48×48 SVG colorful 3D style
-//!   ZirconOSModern/resources/icons/     — 32×32 SVG flat Metro style
+//! Icon resources (src/desktop/<theme>/resources/icons/):
+//!   aero       — 48×48 SVG crystal/glass style
+//!   fluent     — 32×32 SVG outlined/filled style
+//!   sunvalley  — 32×32 SVG thin outline/rounded
+//!   classic    — 32×32 SVG 16-color retro style
+//!   luna       — 48×48 SVG colorful 3D style
+//!   modern     — 32×32 SVG flat Metro style
 //!
 //! When the framebuffer cannot render SVG, this module provides per-theme
 //! embedded 16×16 bitmap fallback icons. Each theme has a DIFFERENT pixel
@@ -17,7 +17,7 @@
 const fb = @import("framebuffer.zig");
 
 fn rgb(r: u32, g: u32, b: u32) u32 {
-    return r | (g << 8) | (b << 16);
+    return b | (g << 8) | (r << 16);
 }
 
 // ── Public Types ──
@@ -44,7 +44,7 @@ pub const ThemeStyle = enum(u8) {
 
 pub const ICON_PX_SIZE: u32 = 16;
 
-// ── SVG Resource Paths (from 3rdparty theme packages) ──
+// ── SVG Resource Paths (src/desktop/<theme>/resources/icons/) ──
 
 pub const SvgIconPaths = struct {
     computer: []const u8,
@@ -60,64 +60,64 @@ pub const SvgIconPaths = struct {
 pub fn getSvgPaths(style: ThemeStyle) SvgIconPaths {
     return switch (style) {
         .classic => .{
-            .computer = "3rdparty/ZirconOSClassic/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSClassic/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSClassic/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSClassic/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSClassic/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSClassic/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSClassic/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSClassic/resources/icons/folder.svg",
+            .computer = "src/desktop/classic/resources/icons/computer.svg",
+            .documents = "src/desktop/classic/resources/icons/documents.svg",
+            .network = "src/desktop/classic/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/classic/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/classic/resources/icons/browser.svg",
+            .settings = "src/desktop/classic/resources/icons/settings.svg",
+            .terminal = "src/desktop/classic/resources/icons/terminal.svg",
+            .folder = "src/desktop/classic/resources/icons/folder.svg",
         },
         .luna => .{
-            .computer = "3rdparty/ZirconOSLuna/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSLuna/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSLuna/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSLuna/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSLuna/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSLuna/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSLuna/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSLuna/resources/icons/folder.svg",
+            .computer = "src/desktop/luna/resources/icons/computer.svg",
+            .documents = "src/desktop/luna/resources/icons/documents.svg",
+            .network = "src/desktop/luna/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/luna/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/luna/resources/icons/browser.svg",
+            .settings = "src/desktop/luna/resources/icons/settings.svg",
+            .terminal = "src/desktop/luna/resources/icons/terminal.svg",
+            .folder = "src/desktop/luna/resources/icons/folder.svg",
         },
         .aero => .{
-            .computer = "3rdparty/ZirconOSAero/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSAero/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSAero/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSAero/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSAero/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSAero/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSAero/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSAero/resources/icons/folder.svg",
+            .computer = "src/desktop/aero/resources/icons/computer.svg",
+            .documents = "src/desktop/aero/resources/icons/documents.svg",
+            .network = "src/desktop/aero/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/aero/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/aero/resources/icons/browser.svg",
+            .settings = "src/desktop/aero/resources/icons/settings.svg",
+            .terminal = "src/desktop/aero/resources/icons/terminal.svg",
+            .folder = "src/desktop/aero/resources/icons/folder.svg",
         },
         .modern => .{
-            .computer = "3rdparty/ZirconOSModern/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSModern/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSModern/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSModern/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSModern/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSModern/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSModern/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSModern/resources/icons/folder.svg",
+            .computer = "src/desktop/modern/resources/icons/computer.svg",
+            .documents = "src/desktop/modern/resources/icons/documents.svg",
+            .network = "src/desktop/modern/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/modern/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/modern/resources/icons/browser.svg",
+            .settings = "src/desktop/modern/resources/icons/settings.svg",
+            .terminal = "src/desktop/modern/resources/icons/terminal.svg",
+            .folder = "src/desktop/modern/resources/icons/folder.svg",
         },
         .fluent => .{
-            .computer = "3rdparty/ZirconOSFluent/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSFluent/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSFluent/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSFluent/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSFluent/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSFluent/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSFluent/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSFluent/resources/icons/file_manager.svg",
+            .computer = "src/desktop/fluent/resources/icons/computer.svg",
+            .documents = "src/desktop/fluent/resources/icons/documents.svg",
+            .network = "src/desktop/fluent/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/fluent/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/fluent/resources/icons/browser.svg",
+            .settings = "src/desktop/fluent/resources/icons/settings.svg",
+            .terminal = "src/desktop/fluent/resources/icons/terminal.svg",
+            .folder = "src/desktop/fluent/resources/icons/file_manager.svg",
         },
         .sunvalley => .{
-            .computer = "3rdparty/ZirconOSSunValley/resources/icons/computer.svg",
-            .documents = "3rdparty/ZirconOSSunValley/resources/icons/documents.svg",
-            .network = "3rdparty/ZirconOSSunValley/resources/icons/network.svg",
-            .recycle_bin = "3rdparty/ZirconOSSunValley/resources/icons/recycle_bin.svg",
-            .browser = "3rdparty/ZirconOSSunValley/resources/icons/browser.svg",
-            .settings = "3rdparty/ZirconOSSunValley/resources/icons/settings.svg",
-            .terminal = "3rdparty/ZirconOSSunValley/resources/icons/terminal.svg",
-            .folder = "3rdparty/ZirconOSSunValley/resources/icons/file_manager.svg",
+            .computer = "src/desktop/sunvalley/resources/icons/computer.svg",
+            .documents = "src/desktop/sunvalley/resources/icons/documents.svg",
+            .network = "src/desktop/sunvalley/resources/icons/network.svg",
+            .recycle_bin = "src/desktop/sunvalley/resources/icons/recycle_bin.svg",
+            .browser = "src/desktop/sunvalley/resources/icons/browser.svg",
+            .settings = "src/desktop/sunvalley/resources/icons/settings.svg",
+            .terminal = "src/desktop/sunvalley/resources/icons/terminal.svg",
+            .folder = "src/desktop/sunvalley/resources/icons/file_manager.svg",
         },
     };
 }
@@ -710,7 +710,7 @@ const modern_pixels = [8]IconPixels{
 
 // ════════════════════════════════════════════════════════════
 //  AERO theme — Glass/crystal style with reflection overlay
-//  Uses Aero palette from 3rdparty/ZirconOSAero
+//  Uses Aero palette from src/desktop/aero/resources
 // ════════════════════════════════════════════════════════════
 
 const aero_palettes = [8]IconPalette{
@@ -727,20 +727,21 @@ const aero_palettes = [8]IconPalette{
 fn drawAeroIcon(id: IconId, screen_x: i32, screen_y: i32, scale: u32) void {
     const s: i32 = if (scale < 1) 1 else @intCast(scale);
     const sz: i32 = 16 * s;
-
-    fb.fillRoundedRect(screen_x + 1, screen_y + 1, sz, sz, 2, rgb(0x00, 0x00, 0x00));
-
-    drawPixelIcon(id, screen_x, screen_y, scale, &aero_palettes, &classic_pixels);
-
+    // Aero 玻璃「方块」底：圆角底板 + 顶缘高光 + 细描边，再叠嵌入位图图标。
+    fb.fillRoundedRect(screen_x, screen_y, sz, sz, 3, rgb(0x28, 0x48, 0x68));
+    fb.drawGradientV(screen_x + 1, screen_y + 1, sz - 2, @max(1, @divTrunc(sz, 3)), rgb(0x58, 0x78, 0x98), rgb(0x30, 0x50, 0x70));
+    fb.drawRect(screen_x, screen_y, sz, sz, rgb(0x90, 0xB8, 0xE0));
+    fb.drawHLine(screen_x + 1, screen_y + 1, sz - 2, rgb(0xC8, 0xE0, 0xF8));
+    drawPixelIcon(id, screen_x, screen_y, scale, &aero_palettes, &modern_pixels);
     const hi_h = @divTrunc(sz, 3);
     if (hi_h > 1) {
-        fb.addSpecularBand(screen_x, screen_y, sz, hi_h, 20);
+        fb.addSpecularBand(screen_x, screen_y, sz, hi_h, 24);
     }
 }
 
 // ════════════════════════════════════════════════════════════
 //  FLUENT theme — Outlined icons with accent-colored container
-//  Uses palette from 3rdparty/ZirconOSFluent
+//  Uses palette from src/desktop/fluent/resources
 // ════════════════════════════════════════════════════════════
 
 const fluent_palettes = [8]IconPalette{
@@ -779,7 +780,7 @@ fn drawFluentIcon(id: IconId, screen_x: i32, screen_y: i32, scale: u32) void {
 
 // ════════════════════════════════════════════════════════════
 //  SUNVALLEY theme — Thin outline, rounded circle container
-//  Uses palette from 3rdparty/ZirconOSSunValley
+//  Uses palette from src/desktop/sunvalley/resources
 // ════════════════════════════════════════════════════════════
 
 const sunvalley_palettes = [8]IconPalette{

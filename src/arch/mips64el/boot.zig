@@ -70,6 +70,6 @@ const static_mmap = [_]MmapEntry{
     },
 };
 
-pub fn parse(_: usize) ?BootInfo {
+pub fn parse(_: u32, _: usize) ?BootInfo {
     return BootInfo{};
 }

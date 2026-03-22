@@ -1,0 +1,30 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lightBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8f4fd"/>
+      <stop offset="40%" stop-color="#d0eafc"/>
+      <stop offset="100%" stop-color="#b8d8f8"/>
+    </linearGradient>
+    <radialGradient id="sunGlow" cx="70%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="lightWave1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a0d4f0" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#72bce8" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#90c8f0" stop-opacity="0.3"/>
+    </linearGradient>
+    <linearGradient id="lightWave2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#78b8e0" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#5aa8d8" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#68b0e0" stop-opacity="0.25"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#lightBg)"/>
+  <ellipse cx="1340" cy="320" rx="700" ry="400" fill="url(#sunGlow)"/>
+
+  <path d="M0,720 C320,650 640,790 960,700 C1280,610 1600,750 1920,680 L1920,1080 L0,1080 Z" fill="url(#lightWave2)" opacity="0.5"/>
+  <path d="M0,800 C320,730 640,870 960,780 C1280,690 1600,830 1920,760 L1920,1080 L0,1080 Z" fill="url(#lightWave1)" opacity="0.4"/>
+  <path d="M0,880 C320,830 640,940 960,860 C1280,780 1600,900 1920,840 L1920,1080 L0,1080 Z" fill="#c8e0f4" opacity="0.6"/>
+</svg>

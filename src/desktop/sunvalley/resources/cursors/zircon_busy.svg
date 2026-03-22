@@ -1,0 +1,13 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="svBusyShadow">
+      <feDropShadow dx="0.4" dy="0.5" stdDeviation="0.5" flood-color="#0A1628" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <g filter="url(#svBusyShadow)">
+    <circle cx="16" cy="16" r="10" fill="none" stroke="#e0e8f0" stroke-width="2.8" opacity="0.3"/>
+    <path d="M16,6 A10,10 0 0,1 26,16" fill="none" stroke="#4CB0E8" stroke-width="2.8" stroke-linecap="round"/>
+    <path d="M16,26 A10,10 0 0,1 6,16" fill="none" stroke="#78CCF0" stroke-width="2.2" stroke-linecap="round" opacity="0.5"/>
+    <circle cx="16" cy="16" r="3" fill="#4CB0E8" opacity="0.15"/>
+  </g>
+</svg>

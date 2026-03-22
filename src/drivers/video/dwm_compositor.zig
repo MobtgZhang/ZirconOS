@@ -7,6 +7,11 @@
 //! Architecture follows ReactOS win32ss/user/ntuser model: the compositor runs
 //! in a privileged user-mode process (dwm.exe equivalent) and communicates with
 //! the kernel display driver via IOCTL-based IRP dispatch.
+//!
+//! Wayland 类比（ideas/win7Desktop.md 与合成器协议对齐）：
+//!   - `RedirectedSurface` ≈ `wl_surface` + 离屏缓冲区
+//!   - `notifyFramePresented()` ≈ `wl_surface.frame` / commit 后的显示帧边界
+//!   - 内核 `display.present()` + 双缓冲 `flip()` ≈ compositor 向 KMS 提交一帧
 
 const klog = @import("../../rtl/klog.zig");
 const fb = @import("framebuffer.zig");
@@ -179,7 +184,7 @@ pub fn initAero(cfg: AeroConfig) void {
     state = .ready;
     compositor_initialized = true;
     klog.info("DWM: Aero compositor initialized (glass=%s, blur=%u, shadow=%u)", .{
-        if (cfg.glass_enabled) "on" else "off",
+        @as([]const u8, if (cfg.glass_enabled) "on" else "off"),
         @as(u32, cfg.blur_radius),
         @as(u32, cfg.shadow_layers),
     });
@@ -237,8 +242,8 @@ pub fn initSunValley(cfg: SunValleyConfig) void {
 
     if (cfg.acrylic2_enabled) {
         material.configureAcrylic(.{
-            .blur_radius = 20,
-            .blur_passes = 4,
+            .blur_radius = 3,
+            .blur_passes = 1,
             .noise_opacity = 6,
             .luminosity_blend = cfg.acrylic2_luminosity_blend,
             .tint_color = cfg.mica_tint_color,
@@ -347,7 +352,7 @@ pub fn compose() void {
         .none => {},
     }
 
-    frame_number += 1;
+    // 帧计数由 `notifyFramePresented()`（display.present → flip）统一推进，与 Wayland commit 边界一致。
     state = .ready;
 }
 
@@ -491,6 +496,12 @@ pub fn getSurfaceCount() u16 {
 
 pub fn getFrameNumber() u64 {
     return frame_number;
+}
+
+/// 在 `display.present()` 完成显存提交后调用：标记一帧已送达（类比 Wayland `wl_surface.frame` 回调）。
+pub fn notifyFramePresented() void {
+    if (!compositor_initialized) return;
+    frame_number += 1;
 }
 
 pub fn isInitialized() bool {

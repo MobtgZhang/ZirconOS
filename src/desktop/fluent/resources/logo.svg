@@ -1,0 +1,178 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" font-family="'Liberation Sans', 'Noto Sans', system-ui, sans-serif">
+  <defs>
+    <!-- Acrylic background gradient -->
+    <linearGradient id="acrylicBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="50%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+
+    <!-- Zircon crystal gradient - Fluent style with acrylic feel -->
+    <linearGradient id="crystalFluent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#72c6ef"/>
+      <stop offset="35%" stop-color="#3a8fd8"/>
+      <stop offset="65%" stop-color="#0078d4"/>
+      <stop offset="100%" stop-color="#004578"/>
+    </linearGradient>
+
+    <!-- Acrylic frost overlay -->
+    <linearGradient id="frostOverlay" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Accent glow (Zig orange) -->
+    <radialGradient id="accentGlow" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#f7a41d" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#f7a41d" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Fluent depth shadow -->
+    <filter id="depthShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Acrylic noise texture (SVG approximation) -->
+    <filter id="acrylicNoise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" result="noise"/>
+      <feColorMatrix type="saturate" values="0" in="noise" result="grey"/>
+      <feBlend mode="overlay" in="SourceGraphic" in2="grey"/>
+    </filter>
+
+    <!-- Soft glow for sparkles -->
+    <filter id="sparkleGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Text gradient - Fluent style -->
+    <linearGradient id="fluentText" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#60cdff"/>
+      <stop offset="50%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#60cdff"/>
+    </linearGradient>
+
+    <!-- Left facet -->
+    <linearGradient id="facetL" x1="0%" y1="0%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#004578"/>
+      <stop offset="100%" stop-color="#1a6eb5"/>
+    </linearGradient>
+
+    <!-- Right facet -->
+    <linearGradient id="facetR" x1="100%" y1="0%" x2="0%" y2="50%">
+      <stop offset="0%" stop-color="#60cdff"/>
+      <stop offset="100%" stop-color="#2a8fd4"/>
+    </linearGradient>
+
+    <!-- Top facet -->
+    <linearGradient id="facetT" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e0f3ff"/>
+      <stop offset="100%" stop-color="#72c6ef"/>
+    </linearGradient>
+
+    <!-- Bottom facet -->
+    <linearGradient id="facetB" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0a3a6a"/>
+      <stop offset="100%" stop-color="#061d36"/>
+    </linearGradient>
+
+    <!-- Acrylic layer for the card -->
+    <linearGradient id="acrylicCard" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <clipPath id="roundedClip">
+      <rect x="20" y="20" width="472" height="472" rx="24"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background with Fluent acrylic feel -->
+  <rect width="512" height="512" rx="24" fill="url(#acrylicBg)"/>
+
+  <!-- Subtle grid pattern (Fluent depth) -->
+  <g opacity="0.04" stroke="white" stroke-width="0.5" clip-path="url(#roundedClip)">
+    <line x1="0" y1="128" x2="512" y2="128"/>
+    <line x1="0" y1="256" x2="512" y2="256"/>
+    <line x1="0" y1="384" x2="512" y2="384"/>
+    <line x1="128" y1="0" x2="128" y2="512"/>
+    <line x1="256" y1="0" x2="256" y2="512"/>
+    <line x1="384" y1="0" x2="384" y2="512"/>
+  </g>
+
+  <!-- Accent glow behind crystal -->
+  <circle cx="256" cy="220" r="140" fill="url(#accentGlow)"/>
+
+  <!-- Orbital rings (system layers) -->
+  <ellipse cx="256" cy="225" rx="175" ry="48" fill="none" stroke="#0078d4" stroke-width="0.8" stroke-dasharray="8 6" opacity="0.25" transform="rotate(-18,256,225)"/>
+  <ellipse cx="256" cy="225" rx="160" ry="40" fill="none" stroke="#f7a41d" stroke-width="0.6" stroke-dasharray="5 7" opacity="0.15" transform="rotate(18,256,225)"/>
+
+  <!-- ===== ZIRCON CRYSTAL (Fluent-styled) ===== -->
+  <!-- Bottom pavilion -->
+  <polygon points="256,338 140,215 198,252" fill="url(#facetL)" opacity="0.92"/>
+  <polygon points="256,338 372,215 314,252" fill="url(#facetR)" opacity="0.92"/>
+  <polygon points="256,338 198,252 314,252" fill="url(#facetB)" opacity="0.95"/>
+
+  <!-- Girdle band -->
+  <polygon points="140,215 172,198 340,198 372,215 314,252 198,252" fill="url(#crystalFluent)" opacity="0.95"/>
+
+  <!-- Crown -->
+  <polygon points="140,215 172,198 208,135 182,152" fill="url(#facetL)" opacity="0.9"/>
+  <polygon points="372,215 340,198 304,135 330,152" fill="url(#facetR)" opacity="0.9"/>
+  <polygon points="172,198 208,135 256,118 256,148" fill="#3a9ee6" opacity="0.92"/>
+  <polygon points="340,198 304,135 256,118 256,148" fill="#50b8f0" opacity="0.92"/>
+
+  <!-- Table (top flat face) with Fluent glow -->
+  <polygon points="182,152 208,135 256,118 304,135 330,152 314,174 256,178 198,174" fill="url(#facetT)" opacity="0.97" filter="url(#depthShadow)"/>
+
+  <!-- Acrylic frost overlay on table -->
+  <polygon points="198,152 216,138 256,128 294,140 308,158 256,165 210,160" fill="url(#frostOverlay)" opacity="0.5"/>
+
+  <!-- Z lettermark on table -->
+  <g filter="url(#sparkleGlow)">
+    <line x1="228" y1="140" x2="282" y2="140" stroke="#062040" stroke-width="5.5" stroke-linecap="round"/>
+    <line x1="282" y1="140" x2="228" y2="166" stroke="#062040" stroke-width="5.5" stroke-linecap="round"/>
+    <line x1="228" y1="166" x2="282" y2="166" stroke="#062040" stroke-width="5.5" stroke-linecap="round"/>
+    <line x1="226" y1="138" x2="280" y2="138" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <line x1="280" y1="138" x2="226" y2="164" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <line x1="226" y1="164" x2="280" y2="164" stroke="white" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+  </g>
+
+  <!-- Facet edges -->
+  <g stroke="#60cdff" stroke-width="0.7" fill="none" opacity="0.4">
+    <line x1="182" y1="152" x2="140" y2="215"/>
+    <line x1="330" y1="152" x2="372" y2="215"/>
+    <line x1="198" y1="174" x2="140" y2="215"/>
+    <line x1="314" y1="174" x2="372" y2="215"/>
+    <line x1="140" y1="215" x2="198" y2="252"/>
+    <line x1="372" y1="215" x2="314" y2="252"/>
+    <line x1="198" y1="252" x2="256" y2="338"/>
+    <line x1="314" y1="252" x2="256" y2="338"/>
+    <line x1="256" y1="178" x2="256" y2="338"/>
+    <line x1="198" y1="174" x2="198" y2="252"/>
+    <line x1="314" y1="174" x2="314" y2="252"/>
+  </g>
+
+  <!-- Sparkle vertices -->
+  <circle cx="256" cy="118" r="3.5" fill="white" opacity="0.95"/>
+  <circle cx="182" cy="152" r="2" fill="white" opacity="0.7"/>
+  <circle cx="330" cy="152" r="2" fill="white" opacity="0.7"/>
+  <circle cx="140" cy="215" r="1.6" fill="#60cdff" opacity="0.6"/>
+  <circle cx="372" cy="215" r="1.6" fill="#60cdff" opacity="0.6"/>
+
+  <!-- Fluent accent sparkles (orange Zig nod) -->
+  <g fill="#f7a41d" filter="url(#sparkleGlow)">
+    <circle cx="396" cy="178" r="3.5" opacity="0.8"/>
+    <circle cx="116" cy="272" r="2.5" opacity="0.65"/>
+    <circle cx="388" cy="262" r="2" opacity="0.55"/>
+  </g>
+
+  <!-- ===== Text ===== -->
+  <text x="256" y="392" text-anchor="middle" font-size="38" font-weight="600" letter-spacing="4" fill="url(#fluentText)">ZirconOS</text>
+  <text x="256" y="418" text-anchor="middle" font-size="11" font-weight="300" letter-spacing="3" fill="#60cdff" opacity="0.6">FLUENT · ZIG · HYBRID MICROKERNEL</text>
+
+  <!-- Version badge (Fluent pill style) -->
+  <rect x="218" y="432" width="76" height="22" rx="11" fill="#0078d4" opacity="0.35"/>
+  <text x="256" y="447" text-anchor="middle" font-size="10" font-weight="500" letter-spacing="2" fill="#72c6ef" opacity="0.85">v 1.0</text>
+</svg>

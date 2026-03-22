@@ -3,9 +3,10 @@
 //! Each theme (Classic, Luna, Aero, Modern, Fluent, SunValley) has
 //! a distinct visual style with original ZirconOS design.
 
+const std = @import("std");
 const fb = @import("framebuffer.zig");
-const display = @import("display.zig");
 const icons = @import("icons.zig");
+const klog = @import("../../rtl/klog.zig");
 
 fn getIconStyle() icons.ThemeStyle {
     return switch (menu_style) {
@@ -23,7 +24,7 @@ fn drawMenuIcon(id: icons.IconId, x: i32, y: i32, scale: u32) void {
 }
 
 fn rgb(r: u32, g: u32, b: u32) u32 {
-    return r | (g << 8) | (b << 16);
+    return b | (g << 8) | (r << 16);
 }
 
 pub const MenuStyle = enum(u8) {
@@ -42,8 +43,8 @@ pub const MenuItem = struct {
     bold: bool = false,
 };
 
-// ── Aero (Win7) menu items: classic two-column with search box ──
-const aero_left_items = [_]MenuItem{
+// ── Luna XP：两列 + 搜索 + 底栏（原误放在 Aero 的「蓝顶」布局）──
+const luna_two_col_left = [_]MenuItem{
     .{ .label = "Internet Explorer", .icon_id = .browser, .bold = true },
     .{ .label = "Windows Media Player", .icon_id = .documents, .separator_after = true },
     .{ .label = "Terminal", .icon_id = .computer },
@@ -52,14 +53,56 @@ const aero_left_items = [_]MenuItem{
     .{ .label = "Paint", .icon_id = .documents },
     .{ .label = "Registry Editor", .icon_id = .computer, .separator_after = true },
 };
-const aero_right_items = [_]MenuItem{
+const luna_two_col_right = [_]MenuItem{
     .{ .label = "Documents", .icon_id = .documents, .bold = true },
+    .{ .label = "Pictures", .icon_id = .documents, .bold = true },
+    .{ .label = "Music", .icon_id = .documents, .bold = true },
+    .{ .label = "Games", .icon_id = .computer, .separator_after = true },
     .{ .label = "Computer", .icon_id = .computer, .bold = true },
+    .{ .label = "Network", .icon_id = .network },
     .{ .label = "Control Panel", .icon_id = .computer },
-    .{ .label = "Network", .icon_id = .network, .separator_after = true },
-    .{ .label = "Search", .icon_id = .documents },
+    .{ .label = "Devices and Printers", .icon_id = .computer },
+    .{ .label = "Default Programs", .icon_id = .computer },
+    .{ .label = "Help and Support", .icon_id = .documents, .separator_after = true },
     .{ .label = "Run...", .icon_id = .computer },
 };
+
+const LUNA_HEADER_H: i32 = 62;
+const LUNA_LEFT_W: i32 = 212;
+const LUNA_ROW_H: i32 = 26;
+const LUNA_SEARCH_H: i32 = 50;
+const LUNA_FOOTER_H: i32 = 46;
+const LUNA_IDX_ALL_PROGRAMS: i32 = 50;
+
+// ── Aero (Win7) 毛玻璃：独立列项与布局常数 ──
+const aero7_left = [_]MenuItem{
+    .{ .label = "Internet Explorer", .icon_id = .browser, .bold = true },
+    .{ .label = "Windows Media Player", .icon_id = .documents, .separator_after = true },
+    .{ .label = "Terminal", .icon_id = .computer },
+    .{ .label = "Notepad", .icon_id = .documents },
+    .{ .label = "Calculator", .icon_id = .computer },
+    .{ .label = "Paint", .icon_id = .documents },
+};
+const aero7_right = [_]MenuItem{
+    .{ .label = "Documents", .icon_id = .documents, .bold = true },
+    .{ .label = "Pictures", .icon_id = .documents, .bold = true },
+    .{ .label = "Music", .icon_id = .documents, .bold = true },
+    .{ .label = "Games", .icon_id = .computer, .separator_after = true },
+    .{ .label = "Computer", .icon_id = .computer, .bold = true },
+    .{ .label = "Network", .icon_id = .network },
+    .{ .label = "Control Panel", .icon_id = .computer },
+    .{ .label = "Devices and Printers", .icon_id = .computer },
+    .{ .label = "Help and Support", .icon_id = .documents, .separator_after = true },
+    .{ .label = "Run...", .icon_id = .computer },
+};
+
+const AERO7_HEADER_H: i32 = 52;
+const AERO7_LEFT_W: i32 = 200;
+const AERO7_ROW_H: i32 = 24;
+const AERO7_SEARCH_H: i32 = 46;
+const AERO7_FOOTER_H: i32 = 44;
+const AERO7_RAIL_W: i32 = 52;
+const AERO7_IDX_ALL: i32 = 48;
 
 // ── Fluent (Win10) menu items: tile-centric layout ──
 const fluent_left_items = [_]MenuItem{
@@ -107,6 +150,33 @@ const right_panel_items = [_]MenuItem{
 const bottom_items = [_]MenuItem{
     .{ .label = "Log Off", .icon_id = null },
     .{ .label = "Shut Down", .icon_id = null },
+};
+
+/// Windows 2000–style 左列（程序与系统）
+const w2k_left_items = [_]MenuItem{
+    .{ .label = "Programs", .icon_id = .computer, .separator_after = false },
+    .{ .label = "Documents", .icon_id = .documents, .separator_after = false },
+    .{ .label = "Settings", .icon_id = .computer, .separator_after = false },
+    .{ .label = "Find", .icon_id = .documents, .separator_after = false },
+    .{ .label = "Help", .icon_id = .documents, .separator_after = false },
+    .{ .label = "Run...", .icon_id = .computer, .separator_after = false },
+};
+
+/// 右列（位置与硬件）
+const w2k_right_items = [_]MenuItem{
+    .{ .label = "My Computer", .icon_id = .computer, .bold = true },
+    .{ .label = "My Documents", .icon_id = .documents, .bold = true },
+    .{ .label = "My Network Places", .icon_id = .network, .separator_after = true },
+    .{ .label = "Control Panel", .icon_id = .computer },
+    .{ .label = "Printers and Faxes", .icon_id = .documents },
+};
+
+/// 点击「开始」菜单项后的动作（由 display 处理关机 / 注销）
+pub const MenuAction = enum {
+    none,
+    shutdown,
+    standby,
+    logoff,
 };
 
 var menu_visible: bool = false;
@@ -159,19 +229,268 @@ pub const MenuRect = struct {
     }
 };
 
-fn classicRect(scr_h: i32) MenuRect {
-    const h: i32 = 320;
-    return .{ .x = 0, .y = scr_h - 30 - h, .w = 240, .h = h };
+/// 鼠标在开始菜单内移动时更新高亮（Classic / Luna / Aero 完整命中）。
+/// 若高亮行变化则返回 true，供 shell 决定是否需要整屏重绘。
+pub fn updatePointerHover(px: i32, py: i32, scr_w: i32, scr_h: i32) bool {
+    if (!menu_visible) return false;
+    if (menu_style == .luna) {
+        const prev = hover_index;
+        hover_index = lunaTwoColHoverIndex(px, py, scr_w, scr_h);
+        return prev != hover_index;
+    }
+    if (menu_style == .aero) {
+        const prev = hover_index;
+        hover_index = aero7HoverIndex(px, py, scr_w, scr_h);
+        return prev != hover_index;
+    }
+    if (menu_style != .classic) {
+        const prev = hover_index;
+        hover_index = -1;
+        return prev != -1;
+    }
+    const r = classicRect(scr_h);
+    const prev = hover_index;
+    if (!r.contains(px, py)) {
+        hover_index = -1;
+        return prev != -1;
+    }
+    hover_index = classicHoverIndex(px, py, r);
+    return prev != hover_index;
 }
 
+fn classicHoverIndex(px: i32, py: i32, r: MenuRect) i32 {
+    const foot_y = r.y + r.h - W2K_FOOTER_H;
+    if (px >= r.x + 8 and px < r.x + 96 and py >= foot_y + 6 and py < foot_y + 30) return 200;
+    if (px >= r.x + r.w - 108 and px < r.x + r.w - 12 and py >= foot_y + 6 and py < foot_y + 30) return 201;
+
+    const content_top = r.y + W2K_HEADER_H + 4;
+    const split_x = r.x + W2K_LEFT_W;
+    if (py < content_top + 2 or py >= foot_y) return -1;
+
+    if (px >= r.x + 8 and px < split_x) {
+        const row = @divTrunc(py - (content_top + 2), W2K_ROW_H);
+        if (row >= 0 and row < w2k_left_items.len) return row;
+        return -1;
+    }
+
+    if (px >= split_x + 8 and px < r.x + r.w - 8) {
+        var iy: i32 = content_top + 2;
+        var ridx: i32 = 100;
+        for (w2k_right_items) |item| {
+            if (py >= iy and py < iy + W2K_ROW_H) return ridx;
+            iy += W2K_ROW_H;
+            if (item.separator_after) iy += 4;
+            ridx += 1;
+        }
+    }
+    return -1;
+}
+
+/// 处理菜单内点击（相对当前 `menu_style`）。返回 `.shutdown` / `.logoff` 时由 shell 执行关机或注销。
+pub fn handleMenuClick(px: i32, py: i32, scr_w: i32, scr_h: i32) MenuAction {
+    if (!menu_visible) return .none;
+    const r = getMenuRect(scr_w, scr_h);
+    if (!r.contains(px, py)) return .none;
+    return switch (menu_style) {
+        .classic => handleClassicMenuClick(px, py, r),
+        .luna => handleLunaTwoColMenuClick(px, py, scr_w, scr_h),
+        .aero => handleAero7MenuClick(px, py, scr_w, scr_h),
+        else => .none,
+    };
+}
+
+fn handleClassicMenuClick(px: i32, py: i32, r: MenuRect) MenuAction {
+    const foot_y = r.y + r.h - W2K_FOOTER_H;
+    if (px >= r.x + r.w - 108 and px < r.x + r.w - 12 and py >= foot_y + 6 and py < foot_y + 30)
+        return .shutdown;
+    if (px >= r.x + 8 and px < r.x + 96 and py >= foot_y + 6 and py < foot_y + 30)
+        return .logoff;
+
+    const content_top = r.y + W2K_HEADER_H + 4;
+    const split_x = r.x + W2K_LEFT_W;
+    if (py < content_top + 2 or py >= foot_y) return .none;
+
+    if (px >= r.x + 8 and px < split_x) {
+        const row = @divTrunc(py - (content_top + 2), W2K_ROW_H);
+        if (row >= 0 and row < w2k_left_items.len) {
+            klog.info("Start menu: %s", .{w2k_left_items[@intCast(row)].label});
+        }
+        return .none;
+    }
+
+    if (px >= split_x + 8 and px < r.x + r.w - 8) {
+        var iy: i32 = content_top + 2;
+        for (w2k_right_items) |item| {
+            if (py >= iy and py < iy + W2K_ROW_H) {
+                klog.info("Start menu: %s", .{item.label});
+                return .none;
+            }
+            iy += W2K_ROW_H;
+            if (item.separator_after) iy += 4;
+        }
+    }
+    return .none;
+}
+
+fn handleLunaTwoColMenuClick(px: i32, py: i32, scr_w: i32, scr_h: i32) MenuAction {
+    const h = lunaTwoColHoverIndex(px, py, scr_w, scr_h);
+    if (h == 201) return .shutdown;
+    if (h == 200) return .logoff;
+    if (h >= 0 and h < luna_two_col_left.len) {
+        klog.info("Start menu (Luna): %s", .{luna_two_col_left[@intCast(h)].label});
+        return .none;
+    }
+    if (h == LUNA_IDX_ALL_PROGRAMS) {
+        klog.info("Start menu (Luna): All Programs", .{});
+        return .none;
+    }
+    if (h >= 100) {
+        const idx: usize = @intCast(h - 100);
+        if (idx < luna_two_col_right.len) {
+            klog.info("Start menu (Luna): %s", .{luna_two_col_right[idx].label});
+        }
+    }
+    return .none;
+}
+
+fn handleAero7MenuClick(px: i32, py: i32, scr_w: i32, scr_h: i32) MenuAction {
+    const h = aero7HoverIndex(px, py, scr_w, scr_h);
+    if (h == 201) return .shutdown;
+    if (h == 202) return .standby;
+    if (h == 200) return .logoff;
+    if (h >= 0 and h < aero7_left.len) {
+        klog.info("Start menu (Aero): %s", .{aero7_left[@intCast(h)].label});
+        return .none;
+    }
+    if (h == AERO7_IDX_ALL) {
+        klog.info("Start menu (Aero): All Programs", .{});
+        return .none;
+    }
+    if (h >= 100) {
+        const idx: usize = @intCast(h - 100);
+        if (idx < aero7_right.len) {
+            klog.info("Start menu (Aero): %s", .{aero7_right[idx].label});
+        }
+    }
+    return .none;
+}
+
+fn lunaTwoColHoverIndex(px: i32, py: i32, scr_w: i32, scr_h: i32) i32 {
+    _ = scr_w;
+    const r = lunaRect(scr_h);
+    if (!r.contains(px, py)) return -1;
+
+    const content_y = r.y + LUNA_HEADER_H + 2;
+    const mid_h = r.h - LUNA_HEADER_H - LUNA_SEARCH_H - LUNA_FOOTER_H - 4;
+    const search_y = r.y + r.h - LUNA_SEARCH_H - LUNA_FOOTER_H;
+    const foot_y = r.y + r.h - LUNA_FOOTER_H;
+    const split_x = r.x + 2 + LUNA_LEFT_W;
+    const all_prog_y = content_y + mid_h - LUNA_ROW_H - 6;
+
+    if (py >= foot_y and py < r.y + r.h) {
+        if (py >= foot_y + 6 and py < foot_y + 36) {
+            if (px >= r.x + 8 and px < r.x + 100) return 200;
+            if (px >= r.x + r.w - 120 and px < r.x + r.w - 8) return 201;
+        }
+        return -1;
+    }
+    if (py >= search_y) return -1;
+
+    if (py >= all_prog_y and py < all_prog_y + LUNA_ROW_H and px >= r.x + 8 and px < split_x)
+        return LUNA_IDX_ALL_PROGRAMS;
+
+    if (px >= r.x + 8 and px < split_x and py >= content_y + 6 and py < all_prog_y) {
+        const row = @divTrunc(py - (content_y + 6), LUNA_ROW_H);
+        if (row >= 0 and row < luna_two_col_left.len) return row;
+    }
+
+    if (px >= split_x + 8 and px < r.x + r.w - 8 and py >= content_y + 6 and py < search_y - 4) {
+        var iy: i32 = content_y + 6;
+        var ridx: i32 = 100;
+        for (luna_two_col_right) |item| {
+            if (py >= iy and py < iy + LUNA_ROW_H) return ridx;
+            iy += LUNA_ROW_H;
+            if (item.separator_after) iy += 4;
+            ridx += 1;
+        }
+    }
+    return -1;
+}
+
+fn aero7HoverIndex(px: i32, py: i32, scr_w: i32, scr_h: i32) i32 {
+    _ = scr_w;
+    const r = aeroRect(scr_h);
+    if (!r.contains(px, py)) return -1;
+
+    const inner_x = r.x + 4;
+    const inner_y = r.y + 4;
+    const inner_w = r.w - 8;
+    const inner_h = r.h - 8;
+    const rail = AERO7_RAIL_W;
+    const main_x = inner_x + rail;
+    const main_w = inner_w - rail;
+
+    const content_y = inner_y + AERO7_HEADER_H + 2;
+    const mid_h = inner_h - AERO7_HEADER_H - AERO7_SEARCH_H - AERO7_FOOTER_H - 6;
+    const search_y = inner_y + inner_h - AERO7_SEARCH_H - AERO7_FOOTER_H;
+    const foot_y = inner_y + inner_h - AERO7_FOOTER_H;
+    const split_x = main_x + AERO7_LEFT_W;
+    const all_prog_y = content_y + mid_h - AERO7_ROW_H - 6;
+
+    if (py >= foot_y and py < inner_y + inner_h) {
+        if (py >= foot_y + 6 and py < foot_y + 34) {
+            const sd_x = main_x + main_w - 116;
+            if (px >= main_x + 8 and px < main_x + 96) return 200;
+            if (px >= main_x + 100 and px < sd_x - 8) return 202;
+            if (px >= sd_x and px < main_x + main_w - 8) return 201;
+        }
+        return -1;
+    }
+    if (py >= search_y) return -1;
+
+    if (py >= all_prog_y and py < all_prog_y + AERO7_ROW_H and px >= main_x + 8 and px < split_x)
+        return AERO7_IDX_ALL;
+
+    if (px >= main_x + 8 and px < split_x and py >= content_y + 6 and py < all_prog_y) {
+        const row = @divTrunc(py - (content_y + 6), AERO7_ROW_H);
+        if (row >= 0 and row < aero7_left.len) return row;
+    }
+
+    if (px >= split_x + 6 and px < main_x + main_w - 8 and py >= content_y + 6 and py < search_y - 4) {
+        var iy: i32 = content_y + 6;
+        var ridx: i32 = 100;
+        for (aero7_right) |item| {
+            if (py >= iy and py < iy + AERO7_ROW_H) return ridx;
+            iy += AERO7_ROW_H;
+            if (item.separator_after) iy += 4;
+            ridx += 1;
+        }
+    }
+    return -1;
+}
+
+fn classicRect(scr_h: i32) MenuRect {
+    const h: i32 = 420;
+    const w: i32 = 380;
+    return .{ .x = 0, .y = scr_h - 30 - h, .w = w, .h = h };
+}
+
+// 与 renderClassic / 命中测试共用的 Windows 2000 经典布局常数
+const W2K_HEADER_H: i32 = 52;
+const W2K_LEFT_W: i32 = 196;
+const W2K_ROW_H: i32 = 22;
+const W2K_FOOTER_H: i32 = 40;
+
 fn lunaRect(scr_h: i32) MenuRect {
-    const h: i32 = 400;
-    return .{ .x = 0, .y = scr_h - 30 - h, .w = 380, .h = h };
+    const h: i32 = LUNA_HEADER_H + 320 + LUNA_SEARCH_H + LUNA_FOOTER_H;
+    const w: i32 = 400;
+    return .{ .x = 0, .y = scr_h - 30 - h, .w = w, .h = h };
 }
 
 fn aeroRect(scr_h: i32) MenuRect {
-    const h: i32 = 420;
-    return .{ .x = 0, .y = scr_h - 40 - h, .w = 380, .h = h };
+    const h: i32 = AERO7_HEADER_H + 310 + AERO7_SEARCH_H + AERO7_FOOTER_H + AERO7_RAIL_W + 12;
+    const w: i32 = 428;
+    return .{ .x = 0, .y = scr_h - 40 - h, .w = w, .h = h };
 }
 
 fn modernRect(scr_h: i32) MenuRect {
@@ -207,211 +526,356 @@ pub fn render(scr_w: i32, scr_h: i32) void {
 fn renderClassic(scr_w: i32, scr_h: i32) void {
     _ = scr_w;
     const r = classicRect(scr_h);
-    const bg = rgb(0xC0, 0xC0, 0xC0);
+    const bg = rgb(0xD4, 0xD0, 0xC8);
     const border = rgb(0x80, 0x80, 0x80);
-    const header_bg = rgb(0x00, 0x00, 0x80);
     const text_color = rgb(0x00, 0x00, 0x00);
-    const header_text = rgb(0xFF, 0xFF, 0xFF);
+    const banner_top = rgb(0x00, 0x00, 0xA8);
+    const banner_bot = rgb(0x10, 0x24, 0x82);
+    const hi = rgb(0xFF, 0xFF, 0xFF);
+    const sep = rgb(0xA0, 0x9C, 0x94);
+    const taskbar_gray = rgb(0xC0, 0xC0, 0xC0);
+
+    // 与桌面衔接：轻阴影 + 整块面板（避免「贴图」感）
+    fb.blendTintRect(r.x + 3, r.y + 3, r.w, r.h, rgb(0x00, 0x00, 0x00), 40, 255);
 
     fb.fillRect(r.x, r.y, r.w, r.h, bg);
+    fb.draw3DRect(r.x, r.y, r.w, r.h, hi, border);
     fb.drawRect(r.x, r.y, r.w, r.h, border);
 
-    fb.draw3DRect(r.x, r.y, r.w, r.h, rgb(0xFF, 0xFF, 0xFF), border);
+    // 内凹 1px，与任务栏同系灰阶
+    fb.drawHLine(r.x + 1, r.y + 1, r.w - 2, rgb(0xE8, 0xE8, 0xE8));
+    fb.drawVLine(r.x + 1, r.y + 1, r.h - 2, rgb(0xE8, 0xE8, 0xE8));
 
-    const sidebar_w: i32 = 22;
-    fb.drawGradientV(r.x + 2, r.y + 2, sidebar_w, r.h - 4, rgb(0x00, 0x00, 0x80), rgb(0x00, 0x00, 0x40));
+    // 顶部：ZirconOS 资源图标（经典主题浏览器/地球标志）+ 标题
+    const hdr_inset: i32 = 3;
+    fb.drawGradientH(r.x + hdr_inset, r.y + hdr_inset, r.w - 2 * hdr_inset, W2K_HEADER_H - 2 * hdr_inset, banner_top, banner_bot);
+    const logo_scale: u32 = 2;
+    const icon_px = icons.getIconTotalSize(logo_scale);
+    drawMenuIcon(.browser, r.x + 10, r.y + 10, logo_scale);
+    const title_x = r.x + 14 + icon_px;
+    fb.drawTextTransparent(title_x, r.y + 12, "ZirconOS", hi);
+    fb.drawTextTransparent(title_x, r.y + 30, "Built on NT Technology", rgb(0xC0, 0xD8, 0xFF));
 
-    fb.drawTextTransparent(r.x + 5, r.y + r.h - 80, "Z", header_text);
-    fb.drawTextTransparent(r.x + 5, r.y + r.h - 64, "i", header_text);
-    fb.drawTextTransparent(r.x + 5, r.y + r.h - 48, "r", header_text);
-    fb.drawTextTransparent(r.x + 5, r.y + r.h - 32, "c", header_text);
-    _ = header_bg;
+    const foot_y = r.y + r.h - W2K_FOOTER_H;
+    const content_top = r.y + W2K_HEADER_H + 4;
+    const split_x = r.x + W2K_LEFT_W;
+    fb.drawVLine(split_x, content_top, foot_y - content_top, sep);
 
-    var iy: i32 = r.y + 6;
-    const ix: i32 = r.x + sidebar_w + 6;
-    for (left_panel_items) |item| {
-        if (iy + 22 > r.y + r.h - 26) break;
-        if (item.icon_id) |iid| {
-            drawMenuIcon(iid, ix, iy + 2, 1);
+    var iy: i32 = content_top + 2;
+    const lx: i32 = r.x + 8;
+    var idx: i32 = 0;
+    for (w2k_left_items) |item| {
+        if (hover_index == idx) {
+            fb.fillRect(lx - 2, iy - 1, W2K_LEFT_W - 12, W2K_ROW_H, rgb(0x0A, 0x24, 0x6E));
+            fb.drawTextTransparent(lx + 20, iy + 3, item.label, hi);
+        } else {
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, lx, iy + 2, 1);
+            }
+            fb.drawTextTransparent(lx + 20, iy + 3, item.label, text_color);
         }
-        fb.drawTextTransparent(ix + 22, iy + 3, item.label, text_color);
-        iy += 22;
-        if (item.separator_after) {
-            fb.drawHLine(ix, iy, r.w - sidebar_w - 12, border);
-            iy += 4;
+        if (std.mem.eql(u8, item.label, "Programs")) {
+            fb.drawTextTransparent(r.x + W2K_LEFT_W - 28, iy + 3, ">", if (hover_index == idx) hi else text_color);
         }
+        iy += W2K_ROW_H;
+        idx += 1;
     }
 
-    const bot_y = r.y + r.h - 24;
-    fb.drawHLine(r.x + 2, bot_y, r.w - 4, border);
-    fb.drawTextTransparent(r.x + sidebar_w + 8, bot_y + 5, "Shut Down...", text_color);
+    iy = content_top + 2;
+    const rx: i32 = split_x + 8;
+    var ridx: i32 = 100;
+    for (w2k_right_items) |item| {
+        if (hover_index == ridx) {
+            fb.fillRect(rx - 2, iy - 1, r.w - W2K_LEFT_W - 14, W2K_ROW_H, rgb(0x0A, 0x24, 0x6E));
+            fb.drawTextTransparent(rx + 20, iy + 3, item.label, hi);
+        } else {
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, rx, iy + 2, 1);
+            }
+            if (item.bold) {
+                fb.drawTextTransparent(rx + 20, iy + 3, item.label, rgb(0x00, 0x00, 0x80));
+            } else {
+                fb.drawTextTransparent(rx + 20, iy + 3, item.label, text_color);
+            }
+        }
+        iy += W2K_ROW_H;
+        if (item.separator_after) {
+            iy += 4;
+            fb.drawHLine(rx, iy - 2, r.w - W2K_LEFT_W - 16, sep);
+        }
+        ridx += 1;
+    }
+
+    fb.drawHLine(r.x + 4, foot_y, r.w - 8, sep);
+    // 底边与任务栏顶线同色，视觉上连成一体
+    fb.drawHLine(r.x + 1, r.y + r.h - 1, r.w - 2, taskbar_gray);
+
+    fb.fillRect(r.x + 8, foot_y + 6, 88, 24, if (hover_index == 200) rgb(0x0A, 0x24, 0x6E) else rgb(0xC8, 0xC4, 0xBC));
+    fb.drawTextTransparent(r.x + 18, foot_y + 12, "Log Off", if (hover_index == 200) hi else text_color);
+    fb.fillRect(r.x + r.w - 108, foot_y + 6, 96, 24, if (hover_index == 201) rgb(0x0A, 0x24, 0x6E) else rgb(0xC8, 0xC4, 0xBC));
+    fb.drawTextTransparent(r.x + r.w - 92, foot_y + 12, "Shut Down", if (hover_index == 201) hi else text_color);
 }
 
+/// Luna（XP）：亮蓝顶栏 + 两列 + 搜索 + 底栏 —— 与 Aero 毛玻璃区分。
 fn renderLuna(scr_w: i32, scr_h: i32) void {
     _ = scr_w;
     const r = lunaRect(scr_h);
-    const left_bg = rgb(0xFF, 0xFF, 0xFF);
+    const content_bg = rgb(0xF8, 0xF8, 0xF8);
     const right_bg = rgb(0xD3, 0xE5, 0xFA);
-    const header_left = rgb(0x00, 0x58, 0xE6);
-    const header_right = rgb(0x3A, 0x81, 0xE5);
-    const bottom_bg = rgb(0xD4, 0xE7, 0xFF);
-    const border = rgb(0x00, 0x3C, 0xA0);
-    const text_dark = rgb(0x00, 0x00, 0x00);
+    const text_color = rgb(0x1A, 0x1A, 0x1A);
     const text_white = rgb(0xFF, 0xFF, 0xFF);
     const sep_color = rgb(0xBF, 0xD7, 0xF4);
+    const outer_hi = rgb(0xE8, 0xF0, 0xFF);
+    const outer_lo = rgb(0x00, 0x3C, 0xA0);
 
-    fb.fillRect(r.x + 4, r.y + 4, r.w, r.h, rgb(0x40, 0x40, 0x40));
+    fb.blendTintRect(r.x + 4, r.y + 4, r.w, r.h, rgb(0x00, 0x00, 0x00), 28, 255);
+    fb.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, content_bg);
+    fb.draw3DRect(r.x, r.y, r.w, r.h, outer_hi, outer_lo);
+    fb.draw3DRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, rgb(0x80, 0xB8, 0xF0), rgb(0x00, 0x48, 0xA8));
 
-    fb.fillRect(r.x, r.y, r.w, r.h, left_bg);
+    const header_h = LUNA_HEADER_H;
+    fb.drawGradientH(r.x + 2, r.y + 2, r.w - 4, header_h, rgb(0x00, 0x58, 0xE6), rgb(0x3A, 0x81, 0xE5));
+    fb.addSpecularBand(r.x + 2, r.y + 2, r.w - 4, @divTrunc(header_h, 3), 28);
 
-    const header_h: i32 = 54;
-    fb.drawGradientH(r.x, r.y, r.w, header_h, header_left, header_right);
+    fb.fillRoundedRect(r.x + 10, r.y + 10, 44, 44, 4, rgb(0xE8, 0xE8, 0xE8));
+    fb.drawRect(r.x + 10, r.y + 10, 44, 44, rgb(0xFF, 0xFF, 0xFF));
+    drawMenuIcon(.computer, r.x + 16, r.y + 16, 2);
+    fb.drawTextTransparent(r.x + 60, r.y + 16, "ZirconOS User", text_white);
+    fb.drawTextTransparent(r.x + 60, r.y + 34, "Administrator", rgb(0xC0, 0xE0, 0xFF));
 
-    fb.fillRect(r.x + 8, r.y + 10, 34, 34, rgb(0xE8, 0xE8, 0xE8));
-    fb.drawRect(r.x + 8, r.y + 10, 34, 34, rgb(0xFF, 0xFF, 0xFF));
-    fb.drawTextTransparent(r.x + 50, r.y + 14, "ZirconOS User", text_white);
-    fb.drawTextTransparent(r.x + 50, r.y + 32, "Administrator", rgb(0xC0, 0xE0, 0xFF));
+    const content_y = r.y + header_h + 2;
+    const mid_h = r.h - LUNA_HEADER_H - LUNA_SEARCH_H - LUNA_FOOTER_H - 4;
+    const search_y = r.y + r.h - LUNA_SEARCH_H - LUNA_FOOTER_H;
+    const foot_y = r.y + r.h - LUNA_FOOTER_H;
+    const split_x = r.x + 2 + LUNA_LEFT_W;
+    const all_prog_y = content_y + mid_h - LUNA_ROW_H - 6;
 
-    const content_y = r.y + header_h;
-    const content_h = r.h - header_h - 36;
-    const left_w: i32 = @divTrunc(r.w, 2);
+    fb.fillRect(r.x + 2, content_y, LUNA_LEFT_W, mid_h, content_bg);
+    fb.fillRect(split_x, content_y, r.w - 4 - LUNA_LEFT_W, mid_h, right_bg);
+    fb.drawVLine(split_x, content_y, mid_h, sep_color);
 
-    fb.fillRect(r.x, content_y, left_w, content_h, left_bg);
-    fb.fillRect(r.x + left_w, content_y, r.w - left_w, content_h, right_bg);
-    fb.drawVLine(r.x + left_w, content_y, content_h, sep_color);
-
-    var iy: i32 = content_y + 8;
-    for (left_panel_items) |item| {
-        if (iy + 26 > content_y + content_h) break;
-        if (item.icon_id) |iid| {
-            drawMenuIcon(iid, r.x + 10, iy + 2, 1);
+    var iy: i32 = content_y + 6;
+    for (luna_two_col_left, 0..) |item, li| {
+        if (iy + LUNA_ROW_H > all_prog_y - 2) break;
+        const row_r = hover_index == @as(i32, @intCast(li));
+        if (row_r) {
+            fb.fillRect(r.x + 6, iy - 1, LUNA_LEFT_W - 10, LUNA_ROW_H, rgb(0x31, 0x6A, 0xC5));
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, r.x + 10, iy + 3, 1);
+            }
+            fb.drawTextTransparent(r.x + 38, iy + 5, item.label, text_white);
+        } else {
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, r.x + 10, iy + 3, 1);
+            }
+            const tc = if (item.bold) rgb(0x00, 0x00, 0x00) else text_color;
+            fb.drawTextTransparent(r.x + 38, iy + 5, item.label, tc);
         }
-        fb.drawTextTransparent(r.x + 34, iy + 5, item.label, text_dark);
-        iy += 26;
+        iy += LUNA_ROW_H;
         if (item.separator_after) {
-            fb.drawHLine(r.x + 8, iy, left_w - 16, sep_color);
+            fb.drawHLine(r.x + 8, iy, LUNA_LEFT_W - 12, sep_color);
             iy += 4;
         }
     }
 
-    iy = content_y + 8;
-    for (right_panel_items) |item| {
-        if (iy + 26 > content_y + content_h) break;
-        if (item.icon_id) |iid| {
-            drawMenuIcon(iid, r.x + left_w + 10, iy + 2, 1);
-        }
-        fb.drawTextTransparent(r.x + left_w + 34, iy + 5, item.label, text_dark);
-        iy += 26;
-        if (item.separator_after) {
-            fb.drawHLine(r.x + left_w + 8, iy, r.w - left_w - 16, sep_color);
-            iy += 4;
-        }
+    fb.drawHLine(r.x + 8, all_prog_y - 2, LUNA_LEFT_W - 12, sep_color);
+    const ap_hov = hover_index == LUNA_IDX_ALL_PROGRAMS;
+    if (ap_hov) {
+        fb.fillRect(r.x + 6, all_prog_y - 1, LUNA_LEFT_W - 10, LUNA_ROW_H, rgb(0x31, 0x6A, 0xC5));
+        fb.drawTextTransparent(r.x + 38, all_prog_y + 5, "All Programs", text_white);
+        fb.drawTextTransparent(r.x + LUNA_LEFT_W - 22, all_prog_y + 5, ">", text_white);
+    } else {
+        fb.drawTextTransparent(r.x + 38, all_prog_y + 5, "All Programs", rgb(0x00, 0x51, 0x9E));
+        fb.drawTextTransparent(r.x + LUNA_LEFT_W - 22, all_prog_y + 5, ">", rgb(0x60, 0x60, 0x60));
     }
 
-    const bot_h: i32 = 36;
-    const bot_y = r.y + r.h - bot_h;
-    fb.fillRect(r.x, bot_y, r.w, bot_h, bottom_bg);
-    fb.drawHLine(r.x, bot_y, r.w, sep_color);
+    iy = content_y + 6;
+    var ridx: i32 = 100;
+    for (luna_two_col_right) |item| {
+        if (iy + LUNA_ROW_H > search_y - 6) break;
+        const row_r = hover_index == ridx;
+        if (row_r) {
+            fb.fillRect(split_x + 4, iy - 1, r.w - LUNA_LEFT_W - 14, LUNA_ROW_H, rgb(0x31, 0x6A, 0xC5));
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, split_x + 8, iy + 3, 1);
+            }
+            fb.drawTextTransparent(split_x + 34, iy + 5, item.label, text_white);
+        } else {
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, split_x + 8, iy + 3, 1);
+            }
+            const tc = if (item.bold) rgb(0x00, 0x00, 0x80) else text_color;
+            fb.drawTextTransparent(split_x + 34, iy + 5, item.label, tc);
+        }
+        iy += LUNA_ROW_H;
+        if (item.separator_after) {
+            fb.drawHLine(split_x + 6, iy, r.w - LUNA_LEFT_W - 16, sep_color);
+            iy += 4;
+        }
+        ridx += 1;
+    }
 
-    const logoff_x = r.x + r.w - 170;
-    fb.drawTextTransparent(logoff_x, bot_y + 10, "Log Off", text_dark);
+    fb.fillRect(r.x + 2, search_y, r.w - 4, LUNA_SEARCH_H, rgb(0xE4, 0xEA, 0xF8));
+    fb.drawHLine(r.x + 2, search_y, r.w - 4, sep_color);
+    fb.drawRect(r.x + 10, search_y + 10, r.w - 24, 28, rgb(0xA8, 0xB8, 0xD8));
+    fb.fillRect(r.x + 11, search_y + 11, r.w - 26, 26, rgb(0xFF, 0xFF, 0xFF));
+    fb.drawTextTransparent(r.x + 18, search_y + 17, "Search programs and files", rgb(0x90, 0x90, 0x90));
 
-    const shutdown_x = r.x + r.w - 80;
-    fb.fillRoundedRect(shutdown_x - 4, bot_y + 4, 76, 26, 4, rgb(0xE0, 0x40, 0x30));
-    fb.drawTextTransparent(shutdown_x + 4, bot_y + 10, "Shut Down", text_white);
+    fb.fillRect(r.x + 2, foot_y, r.w - 4, LUNA_FOOTER_H, rgb(0xD4, 0xE7, 0xFF));
+    fb.drawHLine(r.x + 2, foot_y, r.w - 4, sep_color);
 
-    fb.drawRect(r.x, r.y, r.w, r.h, border);
+    const log_h = hover_index == 200;
+    fb.drawTextTransparent(r.x + 14, foot_y + 14, "Log off", if (log_h) rgb(0x00, 0x51, 0x9E) else text_color);
+
+    const sd_x = r.x + r.w - 118;
+    const sd_hov = hover_index == 201;
+    fb.fillRoundedRect(sd_x, foot_y + 8, 108, 30, 3, if (sd_hov) rgb(0xF0, 0x50, 0x40) else rgb(0xE0, 0x40, 0x30));
+    fb.drawTextTransparent(sd_x + 10, foot_y + 15, "Shut down", text_white);
+    fb.drawTextTransparent(sd_x + 94, foot_y + 15, ">", rgb(0xFF, 0xE8, 0xE0));
 }
 
+/// Aero（Win7）：左侧深色轨 + 银灰玻璃顶栏 + 磨砂白/雾蓝列 + 柔和高光（与 Luna 亮蓝区分）。
 fn renderAero(scr_w: i32, scr_h: i32) void {
     _ = scr_w;
     const r = aeroRect(scr_h);
-    const glass_border = rgb(0x40, 0x68, 0xA0);
-    const content_bg = rgb(0xF5, 0xF5, 0xF5);
-    const right_bg = rgb(0xE8, 0xED, 0xF4);
-    const text_color = rgb(0x1A, 0x1A, 0x1A);
+    const text_dark = rgb(0x18, 0x1C, 0x22);
+    const text_dim = rgb(0x50, 0x58, 0x62);
     const text_white = rgb(0xFF, 0xFF, 0xFF);
-    const sep_color = rgb(0xD8, 0xD8, 0xD8);
+    const sep = rgb(0xB8, 0xC4, 0xD4);
+    const rail_bg = rgb(0x10, 0x1C, 0x30);
 
-    // Soft shadow behind menu
-    fb.blendTintRect(r.x + 4, r.y + 4, r.w, r.h, rgb(0x00, 0x00, 0x00), 30, 255);
+    fb.blendTintRect(r.x + 5, r.y + 5, r.w, r.h, rgb(0x00, 0x00, 0x00), 35, 255);
+    fb.fillRoundedRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, 6, rgb(0xE8, 0xEE, 0xF6));
+    fb.blendTintRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, rgb(0x88, 0xA8, 0xC8), 22, 200);
+    fb.draw3DRect(r.x, r.y, r.w, r.h, rgb(0xF5, 0xFA, 0xFF), rgb(0x40, 0x58, 0x70));
+    fb.draw3DRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, rgb(0xC8, 0xD8, 0xE8), rgb(0x30, 0x40, 0x55));
 
-    // Glass border frame: blur the background behind the menu border region
-    fb.boxBlurRect(r.x, r.y, r.w, 4, 8, 2);
-    fb.boxBlurRect(r.x, r.y, 4, r.h, 8, 2);
-    fb.boxBlurRect(r.x + r.w - 4, r.y, 4, r.h, 8, 2);
-    fb.boxBlurRect(r.x, r.y + r.h - 4, r.w, 4, 8, 2);
-    fb.blendTintRect(r.x, r.y, r.w, r.h, glass_border, 140, 180);
+    const inner_x = r.x + 4;
+    const inner_y = r.y + 4;
+    const inner_w = r.w - 8;
+    const inner_h = r.h - 8;
+    const rail = AERO7_RAIL_W;
+    const main_x = inner_x + rail;
+    const main_w = inner_w - rail;
 
-    fb.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, content_bg);
+    fb.fillRect(inner_x, inner_y, rail, inner_h, rail_bg);
+    fb.drawGradientV(inner_x, inner_y, rail, @divTrunc(inner_h, 2), rgb(0x18, 0x28, 0x40), rail_bg);
+    fb.drawVLine(main_x - 1, inner_y, inner_h, rgb(0x30, 0x44, 0x5C));
+    const orb_y = inner_y + inner_h - rail - 6;
+    fb.fillRoundedRect(inner_x + 8, orb_y, 36, 36, 18, rgb(0x28, 0x48, 0x78));
+    fb.drawGradientV(inner_x + 9, orb_y + 1, 34, 17, rgb(0x50, 0x78, 0xA8), rgb(0x28, 0x48, 0x78));
+    fb.drawTextTransparent(inner_x + 18, orb_y + 11, "Z", rgb(0xE8, 0xF0, 0xFF));
 
-    // Header with glass effect
-    const header_h: i32 = 56;
-    fb.drawGradientH(r.x + 2, r.y + 2, r.w - 4, header_h, rgb(0x40, 0x80, 0xC8), rgb(0x60, 0x98, 0xD8));
-    fb.addSpecularBand(r.x + 2, r.y + 2, r.w - 4, @divTrunc(header_h, 3), 25);
+    const hdr_h = AERO7_HEADER_H;
+    fb.drawGradientH(main_x, inner_y, main_w, hdr_h, rgb(0x68, 0x78, 0x88), rgb(0x90, 0xA0, 0xB0));
+    fb.blendTintRect(main_x, inner_y, main_w, hdr_h, rgb(0xE8, 0xF0, 0xF8), 45, 220);
+    fb.addSpecularBand(main_x, inner_y, main_w, @divTrunc(hdr_h, 3), 22);
+    fb.drawHLine(main_x + 2, inner_y + 2, main_w - 4, rgb(0xF8, 0xFC, 0xFF));
 
-    fb.fillRect(r.x + 10, r.y + 10, 38, 38, rgb(0xD0, 0xE0, 0xF0));
-    fb.drawRect(r.x + 10, r.y + 10, 38, 38, rgb(0xFF, 0xFF, 0xFF));
-    fb.drawTextTransparent(r.x + 56, r.y + 14, "ZirconOS User", text_white);
-    fb.drawTextTransparent(r.x + 56, r.y + 32, "ZirconOS \xc2\xb7 Aero Glass + DWM", rgb(0xE8, 0xF0, 0xFF));
+    fb.fillRoundedRect(main_x + 8, inner_y + 8, 40, 40, 5, rgb(0xA8, 0xB8, 0xC8));
+    fb.blendTintRect(main_x + 8, inner_y + 8, 40, 40, rgb(0xFF, 0xFF, 0xFF), 35, 255);
+    fb.drawRect(main_x + 8, inner_y + 8, 40, 40, rgb(0xD8, 0xE4, 0xF0));
+    drawMenuIcon(.computer, main_x + 12, inner_y + 12, 2);
+    fb.drawTextTransparent(main_x + 54, inner_y + 12, "ZirconOS User", text_white);
+    fb.drawTextTransparent(main_x + 54, inner_y + 30, "Windows 7 · Aero Glass", rgb(0xE8, 0xF0, 0xF8));
 
-    const content_y = r.y + header_h + 2;
-    const search_y = r.y + r.h - 42;
-    const content_h = search_y - content_y;
-    const left_w: i32 = @divTrunc(r.w * 55, 100);
+    const content_y = inner_y + hdr_h + 2;
+    const mid_h = inner_h - AERO7_HEADER_H - AERO7_SEARCH_H - AERO7_FOOTER_H - 6;
+    const search_y = inner_y + inner_h - AERO7_SEARCH_H - AERO7_FOOTER_H;
+    const foot_y = inner_y + inner_h - AERO7_FOOTER_H;
+    const split_x = main_x + AERO7_LEFT_W;
+    const all_prog_y = content_y + mid_h - AERO7_ROW_H - 6;
 
-    fb.fillRect(r.x + 2, content_y, left_w, content_h, content_bg);
-    fb.fillRect(r.x + 2 + left_w, content_y, r.w - 4 - left_w, content_h, right_bg);
-    fb.drawVLine(r.x + 2 + left_w, content_y, content_h, sep_color);
+    fb.fillRect(main_x, content_y, AERO7_LEFT_W, mid_h, rgb(0xFA, 0xFC, 0xFE));
+    fb.blendTintRect(main_x, content_y, AERO7_LEFT_W, mid_h, rgb(0xF0, 0xF6, 0xFC), 30, 255);
+    fb.fillRect(split_x, content_y, main_w - AERO7_LEFT_W, mid_h, rgb(0xE4, 0xEC, 0xF4));
+    fb.blendTintRect(split_x, content_y, main_w - AERO7_LEFT_W, mid_h, rgb(0xC8, 0xD8, 0xE8), 18, 200);
+    fb.drawVLine(split_x, content_y, mid_h, sep);
 
-    var iy: i32 = content_y + 8;
-    for (aero_left_items) |item| {
-        if (iy + 28 > search_y - 4) break;
-        if (item.icon_id) |iid| {
-            drawMenuIcon(iid, r.x + 14, iy + 4, 1);
-        }
-        if (item.bold) {
-            fb.drawTextTransparent(r.x + 40, iy + 7, item.label, rgb(0x00, 0x00, 0x00));
+    var iy: i32 = content_y + 6;
+    for (aero7_left, 0..) |item, li| {
+        if (iy + AERO7_ROW_H > all_prog_y - 2) break;
+        const row_r = hover_index == @as(i32, @intCast(li));
+        if (row_r) {
+            fb.blendTintRect(main_x + 6, iy - 1, AERO7_LEFT_W - 12, AERO7_ROW_H, rgb(0x70, 0x98, 0xC8), 55, 255);
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, main_x + 10, iy + 3, 1);
+            }
+            fb.drawTextTransparent(main_x + 36, iy + 5, item.label, text_white);
         } else {
-            fb.drawTextTransparent(r.x + 40, iy + 7, item.label, text_color);
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, main_x + 10, iy + 3, 1);
+            }
+            const tc = if (item.bold) text_dark else text_dim;
+            fb.drawTextTransparent(main_x + 36, iy + 5, item.label, tc);
         }
-        iy += 28;
+        iy += AERO7_ROW_H;
         if (item.separator_after) {
-            fb.drawHLine(r.x + 10, iy, left_w - 16, sep_color);
-            iy += 6;
+            fb.drawHLine(main_x + 8, iy, AERO7_LEFT_W - 14, sep);
+            iy += 4;
         }
     }
 
-    iy = content_y + 8;
-    for (aero_right_items) |item| {
-        if (iy + 28 > search_y - 4) break;
-        if (item.icon_id) |iid| {
-            drawMenuIcon(iid, r.x + left_w + 12, iy + 4, 1);
-        }
-        if (item.bold) {
-            fb.drawTextTransparent(r.x + left_w + 38, iy + 7, item.label, rgb(0x00, 0x00, 0x00));
-        } else {
-            fb.drawTextTransparent(r.x + left_w + 38, iy + 7, item.label, text_color);
-        }
-        iy += 28;
-        if (item.separator_after) {
-            fb.drawHLine(r.x + left_w + 8, iy, r.w - left_w - 20, sep_color);
-            iy += 6;
-        }
+    fb.drawHLine(main_x + 8, all_prog_y - 2, AERO7_LEFT_W - 14, sep);
+    const ap_hov = hover_index == AERO7_IDX_ALL;
+    if (ap_hov) {
+        fb.blendTintRect(main_x + 6, all_prog_y - 1, AERO7_LEFT_W - 12, AERO7_ROW_H, rgb(0x70, 0x98, 0xC8), 50, 255);
+        fb.drawTextTransparent(main_x + 36, all_prog_y + 5, "All Programs", text_white);
+        fb.drawTextTransparent(main_x + AERO7_LEFT_W - 22, all_prog_y + 5, ">", rgb(0xE8, 0xF4, 0xFF));
+    } else {
+        fb.drawTextTransparent(main_x + 36, all_prog_y + 5, "All Programs", rgb(0x20, 0x50, 0x88));
+        fb.drawTextTransparent(main_x + AERO7_LEFT_W - 22, all_prog_y + 5, ">", text_dim);
     }
 
-    fb.fillRect(r.x + 2, search_y, r.w - 4, 40, rgb(0xE0, 0xE8, 0xF0));
-    fb.drawHLine(r.x + 2, search_y, r.w - 4, sep_color);
+    iy = content_y + 6;
+    var ridx: i32 = 100;
+    for (aero7_right) |item| {
+        if (iy + AERO7_ROW_H > search_y - 6) break;
+        const row_r = hover_index == ridx;
+        if (row_r) {
+            fb.blendTintRect(split_x + 4, iy - 1, main_w - AERO7_LEFT_W - 12, AERO7_ROW_H, rgb(0x70, 0x98, 0xC8), 50, 255);
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, split_x + 8, iy + 3, 1);
+            }
+            fb.drawTextTransparent(split_x + 34, iy + 5, item.label, text_white);
+        } else {
+            if (item.icon_id) |iid| {
+                drawMenuIcon(iid, split_x + 8, iy + 3, 1);
+            }
+            const tc = if (item.bold) rgb(0x10, 0x38, 0x68) else text_dim;
+            fb.drawTextTransparent(split_x + 34, iy + 5, item.label, tc);
+        }
+        iy += AERO7_ROW_H;
+        if (item.separator_after) {
+            fb.drawHLine(split_x + 6, iy, main_w - AERO7_LEFT_W - 14, sep);
+            iy += 4;
+        }
+        ridx += 1;
+    }
 
-    fb.drawRect(r.x + 10, search_y + 8, r.w - 130, 24, rgb(0xA0, 0xB0, 0xC0));
-    fb.fillRect(r.x + 11, search_y + 9, r.w - 132, 22, rgb(0xFF, 0xFF, 0xFF));
-    fb.drawTextTransparent(r.x + 16, search_y + 13, "Search programs and files", rgb(0xA0, 0xA0, 0xA0));
+    fb.fillRect(main_x, search_y, main_w, AERO7_SEARCH_H, rgb(0xDC, 0xE4, 0xEE));
+    fb.blendTintRect(main_x, search_y, main_w, AERO7_SEARCH_H, rgb(0xF8, 0xFC, 0xFF), 25, 255);
+    fb.drawHLine(main_x, search_y, main_w, sep);
+    fb.drawRect(main_x + 8, search_y + 9, main_w - 16, 26, rgb(0x98, 0xA8, 0xB8));
+    fb.fillRect(main_x + 9, search_y + 10, main_w - 18, 24, rgb(0xFF, 0xFF, 0xFF));
+    fb.drawTextTransparent(main_x + 16, search_y + 15, "Search programs and files", rgb(0x98, 0xA0, 0xA8));
 
-    const btn_x = r.x + r.w - 108;
-    fb.fillRoundedRect(btn_x, search_y + 6, 96, 28, 4, rgb(0xE0, 0x40, 0x30));
-    fb.drawTextTransparent(btn_x + 12, search_y + 12, "Shut Down", text_white);
+    fb.fillRect(main_x, foot_y, main_w, AERO7_FOOTER_H, rgb(0xD0, 0xDC, 0xE8));
+    fb.blendTintRect(main_x, foot_y, main_w, AERO7_FOOTER_H, rgb(0xF0, 0xF6, 0xFC), 20, 255);
+    fb.drawHLine(main_x, foot_y, main_w, sep);
 
-    fb.drawRect(r.x, r.y, r.w, r.h, glass_border);
+    const log_h = hover_index == 200;
+    fb.drawTextTransparent(main_x + 10, foot_y + 14, "Log off", if (log_h) rgb(0x30, 0x60, 0x98) else text_dim);
+
+    const sleep_h = hover_index == 202;
+    fb.drawTextTransparent(main_x + 100, foot_y + 14, "Sleep", if (sleep_h) rgb(0x30, 0x60, 0x98) else text_dim);
+
+    const sd_x = main_x + main_w - 116;
+    const sd_hov = hover_index == 201;
+    fb.fillRoundedRect(sd_x, foot_y + 8, 106, 28, 4, if (sd_hov) rgb(0xD8, 0x50, 0x40) else rgb(0xB8, 0x48, 0x38));
+    fb.blendTintRect(sd_x, foot_y + 8, 106, 28, rgb(0xFF, 0xC8, 0xB8), if (sd_hov) 35 else 18, 255);
+    fb.drawTextTransparent(sd_x + 10, foot_y + 14, "Shut down", text_white);
+    fb.drawTextTransparent(sd_x + 90, foot_y + 14, ">", rgb(0xFF, 0xE8, 0xE0));
 }
 
 fn renderModern(scr_w: i32, scr_h: i32) void {

@@ -87,7 +87,18 @@ pub fn readInputChar() ?u8 {
     return null;
 }
 
+pub fn consumeTaskMgrHotkey() bool {
+    return keyboard.consumeTaskMgrHotkey();
+}
+
 pub fn halt() noreturn {
+    while (true) {
+        asm volatile ("hlt");
+    }
+}
+
+pub fn standby() noreturn {
+    asm volatile ("sti");
     while (true) {
         asm volatile ("hlt");
     }

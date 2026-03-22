@@ -1,0 +1,58 @@
+<svg viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="nightSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#020814"/>
+      <stop offset="40%" stop-color="#091a30"/>
+      <stop offset="100%" stop-color="#0a1e3a"/>
+    </linearGradient>
+    <linearGradient id="auroraGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00c853" stop-opacity="0"/>
+      <stop offset="20%" stop-color="#00e676" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="#69f0ae" stop-opacity="0.5"/>
+      <stop offset="80%" stop-color="#00c853" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#00c853" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="auroraBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0078d4" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#60cdff" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#0078d4" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#0078d4" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="auroraViolet" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c4dff" stop-opacity="0"/>
+      <stop offset="40%" stop-color="#b388ff" stop-opacity="0.2"/>
+      <stop offset="70%" stop-color="#7c4dff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#7c4dff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="auroraGlow">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#nightSky)"/>
+
+  <!-- Aurora bands -->
+  <g filter="url(#auroraGlow)" opacity="0.7">
+    <path d="M0,350 C320,200 640,380 960,250 C1280,120 1600,300 1920,200 L1920,450 C1600,500 1280,320 960,450 C640,570 320,400 0,520 Z" fill="url(#auroraGreen)"/>
+    <path d="M0,420 C320,300 640,450 960,330 C1280,210 1600,380 1920,280 L1920,500 C1600,560 1280,400 960,520 C640,630 320,480 0,580 Z" fill="url(#auroraBlue)"/>
+    <path d="M0,300 C320,180 640,320 960,200 C1280,80 1600,250 1920,160 L1920,380 C1600,430 1280,280 960,400 C640,510 320,360 0,460 Z" fill="url(#auroraViolet)"/>
+  </g>
+
+  <!-- Mountain silhouette -->
+  <path d="M0,850 L200,720 L380,790 L520,680 L700,760 L880,640 L1040,730 L1200,660 L1380,740 L1520,680 L1700,750 L1920,670 L1920,1080 L0,1080 Z" fill="#050e1a" opacity="0.9"/>
+  <path d="M0,900 L240,830 L440,870 L640,800 L860,860 L1080,780 L1300,850 L1500,790 L1700,840 L1920,780 L1920,1080 L0,1080 Z" fill="#030a14"/>
+
+  <!-- Stars -->
+  <circle cx="120" cy="80" r="1" fill="white" opacity="0.6"/>
+  <circle cx="350" cy="130" r="0.7" fill="white" opacity="0.5"/>
+  <circle cx="580" cy="60" r="1.2" fill="white" opacity="0.7"/>
+  <circle cx="820" cy="100" r="0.8" fill="white" opacity="0.4"/>
+  <circle cx="1050" cy="50" r="0.9" fill="white" opacity="0.6"/>
+  <circle cx="1280" cy="90" r="1.1" fill="white" opacity="0.5"/>
+  <circle cx="1500" cy="70" r="0.6" fill="white" opacity="0.7"/>
+  <circle cx="1750" cy="110" r="1" fill="white" opacity="0.45"/>
+  <circle cx="200" cy="250" r="0.5" fill="white" opacity="0.3"/>
+  <circle cx="700" cy="200" r="0.6" fill="white" opacity="0.35"/>
+  <circle cx="1400" cy="190" r="0.8" fill="white" opacity="0.3"/>
+  <circle cx="1800" cy="240" r="0.5" fill="white" opacity="0.25"/>
+</svg>

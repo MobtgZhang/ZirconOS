@@ -17,7 +17,7 @@ extern const stack_top: u8;
 comptime {
     switch (builtin.target.cpu.arch) {
         .aarch64 => _ = @import("arch/aarch64/mod.zig"),
-        .loongarch64 => _ = @import("arch/loong64/mod.zig"),
+        .loongarch64 => _ = @import("arch/loongarch64/mod.zig"),
         .riscv64 => _ = @import("arch/riscv64/mod.zig"),
         .mips64el => _ = @import("arch/mips64el/mod.zig"),
         else => {},
@@ -27,7 +27,7 @@ comptime {
 pub export fn kernel_main(magic: u32, info_addr: usize) callconv(.c) noreturn {
     switch (builtin.target.cpu.arch) {
         .x86_64 => startX86_64(magic, info_addr),
-        else => startGeneric(),
+        else => startGeneric(magic, info_addr),
     }
 }
 
@@ -121,7 +121,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     const stack_top_addr = @intFromPtr(&stack_top);
     const kernel_end = ((stack_top_addr + (4 * 1024 * 1024) - 1) / (4 * 1024 * 1024)) * (4 * 1024 * 1024);
     klog.info("Kernel end estimated: 0x%x (stack_top=0x%x)", .{ kernel_end, stack_top_addr });
-    const boot_info = boot.parse(info_addr);
+    const boot_info = boot.parse(magic, info_addr);
 
     // Save framebuffer info for later use; do NOT enable the framebuffer
     // console yet so that all boot log messages go to serial only.
@@ -207,7 +207,8 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
     };
 
     const min_pages = (kernel_end / paging.page_size) + 4096;
-    const identity_pages: usize = if (min_pages < 262144) min_pages else 262144;
+    const min_512mb: usize = 131072; // 512MB / 4KB = 131072 pages
+    const identity_pages: usize = if (min_pages < min_512mb) min_512mb else if (min_pages < 262144) min_pages else 262144;
     klog.info("VM: Identity mapping %u pages (%uMB)", .{
         identity_pages, identity_pages * paging.page_size / (1024 * 1024),
     });
@@ -374,7 +375,7 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
                     }
                     arch.impl.framebuffer.setConsoleEnabled(false);
 
-                    drivers.initDesktopMode(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp);
+                    drivers.initDesktopMode(fb_addr, fb_i.width, fb_i.height, fb_i.pitch, fb_i.bpp, fb_i.pixel_bgr != 0);
                     display.syncCursorFromMouse();
                     display.clearFramebuffer();
                 }
@@ -422,6 +423,17 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
         if (drivers.isDesktopReady()) {
             klog.info("Desktop: Rendering %s theme", .{desktopThemeName(desktop_theme)});
 
+            // 桌面会话：登记等价于 dwm.exe 的壳进程 + 主 UI 线程号（便于内核统计与后续调度扩展）。
+            const ps_proc = @import("ps/process.zig");
+            if (ps_proc.createSystemProcess(&alloc, "dwm.exe")) |shell| {
+                const ui_tid = ps_proc.allocTid() orelse 0;
+                ps_proc.registerDesktopSession(shell.pid, ui_tid);
+                ps_proc.setCurrentProcess(shell.pid);
+                klog.info("Desktop: session shell PID=%u UI_TID=%u (dwm.exe)", .{ shell.pid, ui_tid });
+            } else {
+                klog.warn("Desktop: could not register dwm.exe shell process (table full?)", .{});
+            }
+
             // Initial render uses the theme-specific entry point
             switch (theme_id) {
                 .aero => display.renderAeroDesktop(),
@@ -429,43 +441,82 @@ fn startX86_64(magic: u32, info_addr: usize) noreturn {
                 .sunvalley => display.renderSunValleyDesktop(),
                 else => display.renderDesktop(),
             }
+            display.present();
+            klog.info("Desktop: first frame presented (taskbar+shell+cursor)", .{});
 
             const mouse = @import("drivers/input/mouse.zig");
             var prev_buttons: u8 = 0;
+            var last_draw_cx: i32 = -32768;
+            var last_draw_cy: i32 = -32768;
 
             while (true) {
-                var needs_redraw = false;
+                // 先排空 8042 缓冲，减少「中断已到但队列未更新」的一帧延迟，指针更跟手。
+                mouse.poll();
+
+                var needs_ui_paint = false;
+                var hover_changed = false;
 
                 while (mouse.popEvent()) |event| {
-                    needs_redraw = true;
-
                     const cur_buttons = event.buttons;
 
-                    display.handleMouseMove(mouse.getX(), mouse.getY());
+                    hover_changed = display.handleMouseMove(mouse.getX(), mouse.getY()) or hover_changed;
 
-                    if (cur_buttons & 0x01 != 0 and prev_buttons & 0x01 == 0) {
-                        display.handleClick(mouse.getX(), mouse.getY());
+                    if (event.scroll != 0) {
+                        needs_ui_paint = true;
                     }
 
-                    if (cur_buttons & 0x01 == 0 and prev_buttons & 0x01 != 0) {
-                        display.handleMouseRelease();
-                    }
-
-                    if (cur_buttons & 0x02 != 0 and prev_buttons & 0x02 == 0) {
-                        display.handleRightClick(mouse.getX(), mouse.getY());
+                    if (cur_buttons != prev_buttons) {
+                        if (cur_buttons & 0x01 != 0 and prev_buttons & 0x01 == 0) {
+                            if (display.handleClick(mouse.getX(), mouse.getY())) needs_ui_paint = true;
+                        }
+                        if (cur_buttons & 0x01 == 0 and prev_buttons & 0x01 != 0) {
+                            display.handleMouseRelease();
+                            // 松手后必须再合成一帧，恢复任务栏毛玻璃 / 结束拖动态，否则需等指针移动才刷新。
+                            needs_ui_paint = true;
+                        }
+                        if (cur_buttons & 0x02 != 0 and prev_buttons & 0x02 == 0) {
+                            if (display.handleRightClick(mouse.getX(), mouse.getY())) needs_ui_paint = true;
+                        }
                     }
 
                     prev_buttons = cur_buttons;
                 }
 
-                if (needs_redraw) {
+                if (display.handleDesktopHotkeys()) needs_ui_paint = true;
+
+                const mx = mouse.getX();
+                const my = mouse.getY();
+                const pixel_moved = (mx != last_draw_cx or my != last_draw_cy);
+
+                // 拖动时仅在指针整数坐标变化时重绘壳窗口，避免每帧全屏刷新闪烁
+                const needs_full_ui = needs_ui_paint or hover_changed or
+                    (display.isWindowDragging() and pixel_moved);
+
+                if (needs_full_ui) {
                     display.renderDesktopFrame();
+                    display.present();
+                    last_draw_cx = mx;
+                    last_draw_cy = my;
+                } else if (mouse.hasCursorMoved() and pixel_moved) {
+                    if (theme_id == .classic) {
+                        display.renderDesktopCursorOnlyClassic();
+                    } else if (theme_id == .aero or theme_id == .fluent or theme_id == .sunvalley) {
+                        display.renderDesktopCursorOnlyDwm();
+                    } else {
+                        display.renderDesktopFrame();
+                    }
+                    display.present();
+                    last_draw_cx = mx;
+                    last_draw_cy = my;
+                } else if (mouse.hasCursorMoved()) {
+                    mouse.clearCursorMoved();
                 }
 
+                mouse.poll();
                 arch.waitForInterrupt();
             }
         } else {
-            klog.err("Desktop: Failed to initialize (isDesktopReady=false), falling back to text mode", .{});
+            klog.err("Desktop: isDesktopReady=false (need multiboot framebuffer + initDesktopMode); text mode", .{});
         }
     }
 
@@ -540,7 +591,7 @@ fn desktopThemeName(theme: @import("arch.zig").impl.boot.DesktopTheme) []const u
     };
 }
 
-fn startGeneric() noreturn {
+fn startGeneric(magic: u32, info_addr: usize) noreturn {
     const boot = arch.impl.boot;
     const frame = @import("mm/frame.zig");
     const heap = @import("mm/heap.zig");
@@ -590,10 +641,13 @@ fn startGeneric() noreturn {
 
     klog.info("--- Phase 1: Boot + Early Kernel ---", .{});
 
-    const boot_info = boot.parse(0);
+    const boot_info = boot.parse(magic, info_addr);
     if (boot_info) |info| {
         klog.info("Memory: upper=%u KB, mmap_entries=%u", .{
             info.mem_upper_kb, info.mmap_entry_count,
+        });
+        klog.info("Boot: mode=%u desktop_theme=%u (EFI handoff if magic matches)", .{
+            @intFromEnum(info.boot_mode), @intFromEnum(info.desktop_theme),
         });
     }
 
