@@ -1,38 +1,31 @@
+//! ZirconOS Boot Manager — LoongArch64 UEFI（与 `boot/zbm/uefi/main.zig` 同一套文本菜单）
+//!
+//! Zig 无法直接链接出 LoongArch PE/COFF，故以 `zig build-obj` + GNU-EFI + objcopy 生成 BOOTLOONGARCH64.EFI。
+//! 源码路径：`boot/zbm/uefi/main_loongarch64.zig`（与 x86 UEFI ZBM 同目录）。
 const std = @import("std");
 const uefi = std.os.uefi;
-const builtin = @import("builtin");
 const unicode = std.unicode;
+const elf = std.elf;
 
-const arch_name = switch (builtin.target.cpu.arch) {
-    .x86_64 => "x86_64",
-    .aarch64 => "aarch64",
-    .riscv64 => "riscv64",
-    .loongarch64 => "loongarch64",
-    else => "unknown",
-};
+const arch_name = "loongarch64";
 
 const debug_mode = @import("build_options").debug;
 const desktop_theme_name = @import("build_options").desktop;
 
-// ── ZirconOS Boot Manager Constants ──
+// ── ZirconOS Boot Manager Constants（与 x86 UEFI ZBM 一致）──
 
 const ZBM_VERSION = "1.0";
-const TIMER_INTERVAL: u64 = 10_000_000; // 1 second in 100ns units
 const DEFAULT_TIMEOUT: u32 = 10;
 const MAX_ENTRIES: usize = 8;
 
-/// Windows 7–style text boot menu (black background). VGA attribute bytes.
 const Attr = struct {
-    const normal: u8 = 0x0F; // bright white on black
-    const dim: u8 = 0x07; // light gray on black
-    const highlight: u8 = 0x70; // black on light gray (selection bar)
-    const border: u8 = 0x08; // dark gray on black (separator)
+    const normal: u8 = 0x0F;
+    const dim: u8 = 0x07;
+    const highlight: u8 = 0x70;
+    const border: u8 = 0x08;
 };
 
 const KERNEL_PATH = "\\boot\\kernel.elf";
-const BCD_PATH = "\\boot\\BCD";
-
-// ── Boot Entry ──
 
 const BootEntry = struct {
     description: []const u8,
@@ -41,8 +34,6 @@ const BootEntry = struct {
     is_default: bool,
 };
 
-// ── Boot Manager State ──
-
 var entries: [MAX_ENTRIES]BootEntry = undefined;
 var entry_count: usize = 0;
 var selected: usize = 0;
@@ -50,7 +41,6 @@ var countdown: u32 = DEFAULT_TIMEOUT;
 var timer_active: bool = true;
 
 fn initBootEntries() void {
-    // DESKTOP=none: default boot is text/CMD session, not a graphical desktop theme.
     if (comptime std.mem.eql(u8, desktop_theme_name, "none")) {
         addEntry("ZirconOS v1.0", KERNEL_PATH, "console=serial,vga debug=0 shell=cmd", true);
         addEntry("ZirconOS v1.0 [Debug Mode]", KERNEL_PATH, "console=serial,vga debug=1 verbose=1 shell=cmd", false);
@@ -75,62 +65,157 @@ fn addEntry(desc: []const u8, path: []const u8, cmdline: []const u8, is_default:
     entry_count += 1;
 }
 
-// ── UEFI Boot Manager Entry Point ──
+// ── LoongArch EFI handoff（与 src/arch/loongarch64/boot.zig 一致）──
 
-pub fn main() noreturn {
-    const st = uefi.system_table;
-    const out = st.con_out orelse halt();
-    const bs = st.boot_services orelse halt();
+const ZIRCON_LOONGARCH_EFI_MAGIC: u32 = 0x6372697A;
+const HANDOFF_PHYS: usize = 0x100000;
+
+const EfiHandoff = extern struct {
+    magic: u32,
+    version: u32,
+    boot_mode: u32,
+    desktop: u32,
+};
+
+const Elf64_Ehdr = extern struct {
+    e_ident: [16]u8,
+    e_type: u16,
+    e_machine: u16,
+    e_version: u32,
+    e_entry: u64,
+    e_phoff: u64,
+    e_shoff: u64,
+    e_flags: u32,
+    e_ehsize: u16,
+    e_phentsize: u16,
+    e_phnum: u16,
+    e_shentsize: u16,
+    e_shnum: u16,
+    e_shstrndx: u16,
+};
+
+const Elf64_Phdr = extern struct {
+    p_type: u32,
+    p_flags: u32,
+    p_offset: u64,
+    p_vaddr: u64,
+    p_paddr: u64,
+    p_filesz: u64,
+    p_memsz: u64,
+    p_align: u64,
+};
+
+const PT_LOAD: u32 = 1;
+
+fn comptimeDesktopId() u32 {
+    const s = desktop_theme_name;
+    if (comptime std.mem.eql(u8, s, "none")) return 0;
+    if (comptime std.mem.eql(u8, s, "classic")) return 1;
+    if (comptime std.mem.eql(u8, s, "luna")) return 2;
+    if (comptime std.mem.eql(u8, s, "aero")) return 3;
+    if (comptime std.mem.eql(u8, s, "modern")) return 4;
+    if (comptime std.mem.eql(u8, s, "fluent")) return 5;
+    if (comptime std.mem.eql(u8, s, "sunvalley")) return 6;
+    return 6;
+}
+
+/// 将菜单项映射为 EFI handoff（与 x86 条目语义尽量对应）
+fn handoffForSelectedEntry(idx: usize) EfiHandoff {
+    const def_id = comptimeDesktopId();
+    var boot_mode: u32 = 0;
+    var desktop: u32 = def_id;
+    switch (idx) {
+        0 => {
+            boot_mode = 0;
+            desktop = def_id;
+        },
+        1 => {
+            boot_mode = 0;
+            desktop = def_id;
+        },
+        2, 3, 4 => {
+            boot_mode = 0;
+            desktop = 0;
+        },
+        5 => {
+            boot_mode = 1;
+            desktop = 0;
+        },
+        else => {
+            boot_mode = 0;
+            desktop = def_id;
+        },
+    }
+    return .{
+        .magic = ZIRCON_LOONGARCH_EFI_MAGIC,
+        .version = 1,
+        .boot_mode = boot_mode,
+        .desktop = desktop,
+    };
+}
+
+fn jumpToKernel(entry: u64, handoff_phys: usize) noreturn {
+    const mag: u64 = @as(u64, ZIRCON_LOONGARCH_EFI_MAGIC);
+    asm volatile (
+        \\ move $a0, %[mag]
+        \\ move $a1, %[hand]
+        \\ jr %[entry]
+        :
+        : [mag] "r" (mag),
+          [hand] "r" (handoff_phys),
+          [entry] "r" (entry),
+    );
+    unreachable;
+}
+
+fn haltLa() noreturn {
+    while (true) {
+        asm volatile ("idle 0");
+    }
+}
+
+// ── Boot flow（与 x86 `main` 等价，出口为 `efi_main`）──
+
+fn runBootManager(st: *uefi.tables.SystemTable) uefi.Status {
+    const out = st.con_out orelse return .unsupported;
+    const bs = st.boot_services orelse return .unsupported;
 
     out.reset(false) catch {};
-
-    // Set console mode to 80x25 (mode 0) if available
     _ = out.setMode(0) catch {};
 
     initBootEntries();
-
-    // ── Display Boot Manager Menu ──
     displayBootManagerMenu(out);
     _ = out.enableCursor(false) catch {};
 
-    // ── Interactive Menu Loop ──
     const cin = st.con_in orelse {
-        // No console input (headless firmware): boot default entry immediately.
-        // Previously we halted here, which prevented the kernel from ever loading.
         displayBootProgress(out);
-        loadAndBootKernel(out, bs);
+        loadAndBootLoongArchKernel(out, bs);
         puts(out, "\r\n");
         puts(out, "  [!!] Failed to load kernel image (no console input path).\r\n");
-        halt();
+        haltLa();
     };
 
     while (true) {
-        // Check for keypress
         if (readKey(cin)) |key| {
             timer_active = false;
 
             switch (key.scan_code) {
-                0x01 => { // Up arrow
+                0x01 => {
                     if (selected > 0) selected -= 1;
                     displayBootManagerMenu(out);
                 },
-                0x02 => { // Down arrow
+                0x02 => {
                     if (selected + 1 < entry_count) selected += 1;
                     displayBootManagerMenu(out);
                 },
-                0x0D => { // Enter (scan code for some UEFI)
-                    break; // Boot selected
-                },
-                0x17 => { // ESC
+                0x0D => break,
+                0x17 => {
                     displayAdvancedOptions(out);
                 },
                 else => {
-                    if (key.unicode_char == '\r' or key.unicode_char == '\n') {
-                        break; // Boot selected
-                    }
-                    // Number keys 1-6
+                    if (key.unicode_char == '\r' or key.unicode_char == '\n') break;
                     if (key.unicode_char >= '1' and key.unicode_char <= '6') {
-                        const idx: usize = key.unicode_char - '1';
+                        const idx: usize = @as(usize, @intCast(key.unicode_char - '1'));
                         if (idx < entry_count) {
                             selected = idx;
                             break;
@@ -140,36 +225,30 @@ pub fn main() noreturn {
             }
         }
 
-        // Timer tick (simple busy wait, ~1 second intervals)
         if (timer_active) {
             waitOneSecond(bs);
             if (countdown > 0) {
                 countdown -= 1;
                 updateTimerDisplay(out);
             } else {
-                break; // Timeout: boot default
+                break;
             }
         }
     }
 
-    // ── Boot the selected entry ──
     out.reset(false) catch {};
     displayBootProgress(out);
+    loadAndBootLoongArchKernel(out, bs);
 
-    // Attempt to load kernel from ESP
-    loadAndBootKernel(out, bs);
-
-    // If kernel load failed, show error
     puts(out, "\r\n");
     puts(out, "  [!!] Failed to load kernel image.\r\n");
     puts(out, "  [!!] Please use GRUB for full kernel boot.\r\n");
     puts(out, "  [!!] System halted.\r\n");
-    halt();
+    haltLa();
 }
 
-// ── Menu Display ──
+// ── Menu Display（与 x86 一致）──
 
-/// Row index (0-based) of the countdown line for the current `entry_count` layout.
 fn bootMenuTimerRow() usize {
     return 11 + entry_count;
 }
@@ -183,7 +262,6 @@ fn clearTextRow(out: anytype, row: usize) void {
     }
 }
 
-/// Redraw only the countdown line (avoids full `reset` + repaint every second — no flicker).
 fn refreshTimerLine(out: anytype) void {
     if (!timer_active or countdown == 0) return;
     const row = bootMenuTimerRow();
@@ -205,8 +283,6 @@ fn refreshTimerLine(out: anytype) void {
 
 fn displayBootManagerMenu(out: anytype) void {
     out.reset(false) catch {};
-
-    // Black screen, white text (Windows 7 text-mode boot menu style)
     _ = out.setAttribute(@bitCast(Attr.normal)) catch {};
 
     puts(out, "\r\n");
@@ -220,7 +296,6 @@ fn displayBootManagerMenu(out: anytype) void {
     puts(out, "    (Use the arrow keys to highlight your choice, then press ENTER.)\r\n");
     puts(out, "\r\n");
 
-    // Display entries
     for (0..entry_count) |i| {
         if (i == selected) {
             _ = out.setAttribute(@bitCast(Attr.highlight)) catch {};
@@ -240,7 +315,6 @@ fn displayBootManagerMenu(out: anytype) void {
     for (0..72) |_| puts(out, "-");
     puts(out, "\r\n\r\n");
 
-    // Timer
     if (timer_active and countdown > 0) {
         _ = out.setAttribute(@bitCast(Attr.normal)) catch {};
         puts(out, "    Seconds until the highlighted choice will be started automatically: ");
@@ -250,18 +324,14 @@ fn displayBootManagerMenu(out: anytype) void {
 
     _ = out.setAttribute(@bitCast(Attr.dim)) catch {};
     puts(out, "\r\n");
-
-    // Description of selected entry
     puts(out, "    ");
     displayEntryDescription(out, selected);
     puts(out, "\r\n");
 
-    // Footer
     _ = out.setAttribute(@bitCast(Attr.normal)) catch {};
     puts(out, "\r\n");
     puts(out, "  ENTER=Choose  |  ESC=Advanced Options  |  F1=Help                          \r\n");
 
-    // System info
     _ = out.setAttribute(@bitCast(Attr.dim)) catch {};
     puts(out, "\r\n");
     puts(out, "    Architecture: " ++ arch_name ++ "  |  Boot: UEFI");
@@ -347,6 +417,7 @@ fn displayAdvancedOptions(out: anytype) void {
     puts(out, "      zbmfw.efi -> zbmload -> kernel -> HAL\r\n");
     puts(out, "        -> Executive Init -> smss -> csrss -> shell\r\n");
     puts(out, "\r\n");
+
     puts(out, "    Kernel Phases (0-11):\r\n");
     puts(out, "      0: Early Init          6: I/O + FS + Drivers\r\n");
     puts(out, "      1: Boot + Hardware     7: PE/ELF Loader\r\n");
@@ -360,7 +431,6 @@ fn displayAdvancedOptions(out: anytype) void {
     puts(out, "  Press any key to return to boot menu...                                     \r\n");
     _ = out.setAttribute(@bitCast(Attr.dim)) catch {};
 
-    // Wait for keypress
     if (uefi.system_table.con_in) |cin| {
         waitForKey(cin);
     }
@@ -368,8 +438,6 @@ fn displayAdvancedOptions(out: anytype) void {
     timer_active = false;
     displayBootManagerMenu(out);
 }
-
-// ── Boot Progress Display ──
 
 fn displayBootProgress(out: anytype) void {
     _ = out.setAttribute(@bitCast(Attr.normal)) catch {};
@@ -393,60 +461,14 @@ fn displayBootProgress(out: anytype) void {
     puts(out, "\r\n");
 }
 
-// ── ELF64 Structures ──
-
-const Elf64_Ehdr = extern struct {
-    e_ident: [16]u8,
-    e_type: u16,
-    e_machine: u16,
-    e_version: u32,
-    e_entry: u64,
-    e_phoff: u64,
-    e_shoff: u64,
-    e_flags: u32,
-    e_ehsize: u16,
-    e_phentsize: u16,
-    e_phnum: u16,
-    e_shentsize: u16,
-    e_shnum: u16,
-    e_shstrndx: u16,
-};
-
-const Elf64_Phdr = extern struct {
-    p_type: u32,
-    p_flags: u32,
-    p_offset: u64,
-    p_vaddr: u64,
-    p_paddr: u64,
-    p_filesz: u64,
-    p_memsz: u64,
-    p_align: u64,
-};
-
-const PT_LOAD: u32 = 1;
-
-// GOP framebuffer info passed from UEFI to kernel via multiboot2 tag
 const GopFbInfo = struct {
     addr: u64,
     width: u32,
     height: u32,
     pitch: u32,
     bpp: u8,
-    /// 1 = UEFI BGR 顺序（首字节蓝，与 QEMU GOP 常见）；0 = RGB 顺序
     pixel_bgr: u8,
 };
-
-const UEFI_VECTOR_MAGIC: u32 = 0x55454649;
-const MULTIBOOT2_MAGIC: u32 = 0x36d76289;
-
-const UefiVectorTable = extern struct {
-    magic: u32,
-    version: u32,
-    kernel_entry: u64,
-    stack_addr: u64,
-};
-
-// ── Kernel Loading (UEFI) ──
 
 fn queryGopFramebuffer(out: anytype, bs: *uefi.tables.BootServices) ?GopFbInfo {
     const gop_opt = bs.locateProtocol(uefi.protocol.GraphicsOutput, null) catch return null;
@@ -495,8 +517,7 @@ fn queryGopFramebuffer(out: anytype, bs: *uefi.tables.BootServices) ?GopFbInfo {
     return fb_info;
 }
 
-fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
-    // ── Step 1: Open kernel.elf from ESP ──
+fn loadAndBootLoongArchKernel(out: anytype, bs: *uefi.tables.BootServices) void {
     puts(out, "    [*] Opening kernel from ESP...\r\n");
 
     const loaded_image = bs.openProtocol(
@@ -544,7 +565,6 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
 
     puts(out, "    [*] kernel.elf opened\r\n");
 
-    // ── Step 2: Read kernel file into memory ──
     var info_buf: [256]u8 align(8) = undefined;
     const file_info = kernel_file.getInfo(.file, @as([]align(8) u8, &info_buf)) catch {
         puts(out, "    [!!] Failed to get kernel file info\r\n");
@@ -574,7 +594,6 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
 
     puts(out, "    [*] Kernel file read into buffer\r\n");
 
-    // ── Step 3: Parse ELF64 header ──
     if (file_size < @sizeOf(Elf64_Ehdr)) {
         puts(out, "    [!!] File too small for ELF header\r\n");
         return;
@@ -592,33 +611,34 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
         puts(out, "    [!!] Not a 64-bit ELF\r\n");
         return;
     }
+    if (ehdr.e_machine != @intFromEnum(elf.EM.LOONGARCH)) {
+        puts(out, "    [!!] Not a LoongArch ELF\r\n");
+        return;
+    }
 
     puts(out, "    [*] ELF64 valid, ");
     printDecimal(out, ehdr.e_phnum);
     puts(out, " program headers\r\n");
 
-    // ── Step 4: Load PT_LOAD segments into physical memory ──
     var segments_loaded: u32 = 0;
     for (0..ehdr.e_phnum) |i| {
-        const ph_off: usize = @intCast(ehdr.e_phoff + i * ehdr.e_phentsize);
+        const ph_off: usize = @intCast(ehdr.e_phoff + @as(u64, @intCast(i)) * ehdr.e_phentsize);
         if (ph_off + @sizeOf(Elf64_Phdr) > file_size) break;
 
         const phdr: *const Elf64_Phdr = @ptrCast(@alignCast(file_data.ptr + ph_off));
         if (phdr.p_type != PT_LOAD) continue;
         if (phdr.p_memsz == 0) continue;
 
+        var paddr: u64 = phdr.p_paddr;
+        if (paddr == 0) paddr = phdr.p_vaddr;
+
         const num_pages: usize = @intCast((phdr.p_memsz + 4095) / 4096);
-        const page_base: usize = @intCast(phdr.p_paddr & ~@as(u64, 0xFFF));
+        const page_base: usize = @intCast(paddr & ~@as(u64, 0xFFF));
+        const dest_ptr: [*]align(4096) uefi.Page = @ptrFromInt(page_base);
 
-        _ = bs.allocatePages(
-            .{ .address = @ptrFromInt(page_base) },
-            .loader_data,
-            num_pages,
-        ) catch {
-            // Pages might overlap or be pre-allocated; continue anyway
-        };
+        _ = bs.allocatePages(.{ .address = dest_ptr }, .loader_data, num_pages) catch {};
 
-        const dst: [*]u8 = @ptrFromInt(@as(usize, @intCast(phdr.p_paddr)));
+        const dst: [*]u8 = @ptrFromInt(@as(usize, @intCast(paddr)));
         const filesz: usize = @intCast(phdr.p_filesz);
         const memsz: usize = @intCast(phdr.p_memsz);
         const offset: usize = @intCast(phdr.p_offset);
@@ -627,7 +647,6 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
             const src = file_data.ptr + offset;
             @memcpy(dst[0..filesz], src[0..filesz]);
         }
-
         if (memsz > filesz) {
             @memset(dst[filesz..memsz], 0);
         }
@@ -639,230 +658,38 @@ fn loadAndBootKernel(out: anytype, bs: *uefi.tables.BootServices) void {
     printDecimal(out, segments_loaded);
     puts(out, " ELF segments\r\n");
 
-    // ── Step 5: Find UEFI vector table in loaded kernel ──
-    // Scan the first loaded segment for the magic pattern 0x55454649
-    const kernel_base: usize = blk: {
-        for (0..ehdr.e_phnum) |i| {
-            const pho: usize = @intCast(ehdr.e_phoff + i * ehdr.e_phentsize);
-            if (pho + @sizeOf(Elf64_Phdr) > file_size) continue;
-            const ph: *const Elf64_Phdr = @ptrCast(@alignCast(file_data.ptr + pho));
-            if (ph.p_type == PT_LOAD) break :blk @as(usize, @intCast(ph.p_paddr));
-        }
-        break :blk 0;
-    };
+    _ = queryGopFramebuffer(out, bs);
 
-    var vec: ?*const UefiVectorTable = null;
-    if (kernel_base != 0) {
-        // Scan the first 64KB from kernel base for the magic pattern
-        const scan_end = kernel_base + 0x10000;
-        var addr = kernel_base;
-        while (addr + @sizeOf(UefiVectorTable) <= scan_end) : (addr += 8) {
-            const candidate: *const UefiVectorTable = @ptrFromInt(addr);
-            if (candidate.magic == UEFI_VECTOR_MAGIC and candidate.version == 0 and
-                candidate.kernel_entry > kernel_base and candidate.stack_addr > kernel_base)
-            {
-                vec = candidate;
-                break;
-            }
-        }
-    }
-
-    if (vec == null) {
-        puts(out, "    [!!] UEFI vector table not found in kernel\r\n");
-        return;
-    }
-
-    const kernel_entry = vec.?.kernel_entry;
-    puts(out, "    [*] kernel_main at 0x");
-    printHex64(out, kernel_entry);
+    puts(out, "    [*] kernel entry at 0x");
+    printHex64(out, ehdr.e_entry);
     puts(out, "\r\n");
 
-    // ── Step 6: Query GOP framebuffer (must be done BEFORE ExitBootServices) ──
-    const gop_fb = queryGopFramebuffer(out, bs);
-
-    // ── Step 7: Build Multiboot2-compatible boot info ──
-    const boot_info_pages = bs.allocatePages(.{ .any = {} }, .loader_data, 2) catch {
-        puts(out, "    [!!] Failed to allocate boot info memory\r\n");
+    const hand = handoffForSelectedEntry(selected);
+    const ho_ptr: [*]align(4096) uefi.Page = @ptrFromInt(HANDOFF_PHYS);
+    _ = bs.allocatePages(.{ .address = ho_ptr }, .loader_data, 1) catch {
+        puts(out, "    [!!] Failed to allocate handoff page\r\n");
         return;
     };
-    const bi_base: [*]u8 = @ptrCast(boot_info_pages.ptr);
-    @memset(bi_base[0..8192], 0);
+    const hp: *EfiHandoff = @ptrCast(ho_ptr);
+    hp.* = hand;
 
-    // Get UEFI memory map (final state) and build boot info from it
     var mmap_buf: [32768]u8 align(@alignOf(uefi.tables.MemoryDescriptor)) = undefined;
     const mmap = bs.getMemoryMap(@as([]align(@alignOf(uefi.tables.MemoryDescriptor)) u8, &mmap_buf)) catch {
         puts(out, "    [!!] Failed to get memory map\r\n");
         return;
     };
 
-    const boot_info_addr = buildBootInfo(bi_base, mmap, entries[selected].cmdline, gop_fb);
-    puts(out, "    [*] Multiboot2 boot info ready\r\n");
-
-    // ── Step 8: Exit boot services ──
     puts(out, "    [*] Exiting boot services...\r\n");
 
     bs.exitBootServices(uefi.handle, mmap.info.key) catch {
-        // Key changed, retry
         const mmap2 = bs.getMemoryMap(@as([]align(@alignOf(uefi.tables.MemoryDescriptor)) u8, &mmap_buf)) catch return;
-        _ = buildBootInfo(bi_base, mmap2, entries[selected].cmdline, gop_fb);
         bs.exitBootServices(uefi.handle, mmap2.info.key) catch return;
     };
 
-    // ═══ NO MORE UEFI CALLS PAST THIS POINT ═══
-
-    // ── Step 8: Jump to kernel_main ──
-    // kernel_main uses System V AMD64 ABI: RDI=magic, RSI=info_addr
-    // CRITICAL: Set RSP to the kernel stack from the UEFI vector table.
-    // The UEFI stack lives in firmware memory that becomes unmapped when
-    // the kernel loads its own page tables (Phase 3 identity-maps ~512MB).
-    const kernel_stack = vec.?.stack_addr;
-    asm volatile ("cli");
-    asm volatile (
-        \\mov %[stack], %%rsp
-        \\xor %%rbp, %%rbp
-        \\mov %[magic], %%rdi
-        \\mov %[info], %%rsi
-        \\jmp *%[entry]
-        :
-        : [entry] "r" (kernel_entry),
-          [magic] "r" (@as(u64, MULTIBOOT2_MAGIC)),
-          [info] "r" (@as(u64, boot_info_addr)),
-          [stack] "r" (kernel_stack),
-        : .{ .rdi = true, .rsi = true, .rsp = true, .rbp = true }
-    );
-    unreachable;
+    jumpToKernel(ehdr.e_entry, HANDOFF_PHYS);
 }
 
-fn buildBootInfo(
-    bi_base: [*]u8,
-    mmap: uefi.tables.MemoryMapSlice,
-    cmdline: []const u8,
-    gop_fb: ?GopFbInfo,
-) usize {
-    var off: usize = 8; // skip BootInfoHeader (filled at end)
-
-    // Tag: command line (type=1)
-    {
-        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
-        p[0] = 1;
-        const str_sz: u32 = @intCast(cmdline.len + 1);
-        p[1] = 8 + str_sz;
-        @memcpy((bi_base + off + 8)[0..cmdline.len], cmdline);
-        (bi_base + off + 8)[cmdline.len] = 0;
-        off += (8 + str_sz + 7) & ~@as(usize, 7);
-    }
-
-    // Tag: basic memory info (type=4)
-    const meminfo_off = off;
-    {
-        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
-        p[0] = 4;
-        p[1] = 16;
-        p[2] = 640; // mem_lower KB (conventional below 1MB)
-        p[3] = 0; // mem_upper KB (filled after mmap scan)
-        off += 16;
-    }
-
-    // Tag: memory map (type=6)
-    {
-        const tag_start = off;
-        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
-        p[0] = 6;
-        p[2] = 24; // entry_size
-        p[3] = 0; // entry_version
-        var eoff: usize = 16;
-        var mem_upper_kb: u32 = 0;
-
-        var it = mmap.iterator();
-        while (it.next()) |desc| {
-            const mb_type: u32 = uefiToMb2MemType(desc.type);
-            const base = desc.physical_start;
-            const length = desc.number_of_pages * 4096;
-
-            const ep: [*]u8 = bi_base + tag_start + eoff;
-            @as(*u64, @ptrCast(@alignCast(ep))).* = base;
-            @as(*u64, @ptrCast(@alignCast(ep + 8))).* = length;
-            @as(*u32, @ptrCast(@alignCast(ep + 16))).* = mb_type;
-            @as(*u32, @ptrCast(@alignCast(ep + 20))).* = 0;
-
-            if (mb_type == 1 and base >= 0x100000) {
-                mem_upper_kb +|= @intCast(length / 1024);
-            }
-            eoff += 24;
-        }
-
-        p[1] = @intCast(eoff); // tag size
-
-        // Write mem_upper back to basic meminfo tag
-        const mi: [*]u32 = @ptrCast(@alignCast(bi_base + meminfo_off));
-        mi[3] = mem_upper_kb;
-
-        off += (eoff + 7) & ~@as(usize, 7);
-    }
-
-    // Tag: framebuffer (type=8) — GOP framebuffer info for graphical desktop
-    if (gop_fb) |fb| {
-        const base = bi_base + off;
-        @as(*u32, @ptrCast(@alignCast(base))).* = 8; // type
-        @as(*u32, @ptrCast(@alignCast(base + 4))).* = 32; // size (8+8+4+4+4+1+1+2=32)
-        @as(*u64, @ptrCast(@alignCast(base + 8))).* = fb.addr; // framebuffer_addr
-        @as(*u32, @ptrCast(@alignCast(base + 16))).* = fb.pitch; // pitch
-        @as(*u32, @ptrCast(@alignCast(base + 20))).* = fb.width; // width
-        @as(*u32, @ptrCast(@alignCast(base + 24))).* = fb.height; // height
-        base[28] = fb.bpp; // bpp
-        base[29] = 1; // fb_type = 1 (direct color)
-        base[30] = fb.pixel_bgr; // 1=BGR 首字节蓝, 0=RGB 首字节红
-        base[31] = 0x5A; // 扩展有效标记（GRUB 等旧引导未填时内核默认 BGR）
-        off += (32 + 7) & ~@as(usize, 7);
-    }
-
-    // Tag: end (type=0)
-    {
-        const p: [*]u32 = @ptrCast(@alignCast(bi_base + off));
-        p[0] = 0;
-        p[1] = 8;
-        off += 8;
-    }
-
-    // Fill boot info header
-    const hdr: [*]u32 = @ptrCast(@alignCast(bi_base));
-    hdr[0] = @intCast(off); // total_size
-    hdr[1] = 0; // reserved
-
-    return @intFromPtr(bi_base);
-}
-
-fn uefiToMb2MemType(t: uefi.tables.MemoryType) u32 {
-    return switch (t) {
-        .conventional_memory, .loader_code, .loader_data,
-        .boot_services_code, .boot_services_data,
-        => 1, // available
-        .acpi_reclaim_memory => 3,
-        .acpi_memory_nvs => 4,
-        .unusable_memory => 5,
-        else => 2, // reserved
-    };
-}
-
-fn printHex64(out: anytype, value: u64) void {
-    const hex = "0123456789abcdef";
-    var v = value;
-    var buf: [16]u8 = undefined;
-    var i: usize = 16;
-    while (i > 0) {
-        i -= 1;
-        buf[i] = hex[@as(usize, @intCast(v & 0xF))];
-        v >>= 4;
-    }
-    for (buf) |c| {
-        var u16buf: [1:0]u16 = .{@as(u16, c)};
-        _ = out.outputString(&u16buf) catch false;
-    }
-}
-
-// ── UEFI Helper Functions ──
-
-const InputKey = uefi.protocol.SimpleTextInputEx.Key.Input;
+const InputKey = uefi.protocol.SimpleTextInput.Key.Input;
 
 fn readKey(cin: anytype) ?InputKey {
     return cin.readKeyStroke() catch return null;
@@ -911,6 +738,22 @@ fn printDecimal(out: anytype, value: u32) void {
     _ = out.outputString(&buf) catch false;
 }
 
+fn printHex64(out: anytype, value: u64) void {
+    const hex = "0123456789abcdef";
+    var v = value;
+    var buf: [16]u8 = undefined;
+    var i: usize = 16;
+    while (i > 0) {
+        i -= 1;
+        buf[i] = hex[@as(usize, @intCast(v & 0xF))];
+        v >>= 4;
+    }
+    for (buf) |c| {
+        var u16buf: [1:0]u16 = .{@as(u16, c)};
+        _ = out.outputString(&u16buf) catch false;
+    }
+}
+
 fn puts(out: anytype, comptime s: []const u8) void {
     _ = out.outputString(unicode.utf8ToUtf16LeStringLiteral(s)) catch false;
 }
@@ -922,13 +765,8 @@ fn putsRuntime(out: anytype, s: []const u8) void {
     }
 }
 
-fn halt() noreturn {
-    while (true) {
-        switch (builtin.target.cpu.arch) {
-            .x86_64 => asm volatile ("hlt"),
-            .aarch64 => asm volatile ("wfi"),
-            .riscv64 => asm volatile ("wfi"),
-            else => {},
-        }
-    }
+export fn efi_main(image_handle: uefi.Handle, st: *uefi.tables.SystemTable) callconv(uefi.cc) uefi.Status {
+    uefi.handle = image_handle;
+    uefi.system_table = st;
+    return runBootManager(st);
 }
