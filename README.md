@@ -1,126 +1,144 @@
 # ZirconOS v1.0
 
-**ZirconOS** 是一个 NT 风格混合微内核操作系统，使用 Zig 语言实现，支持 BIOS (GRUB Multiboot2) 和 UEFI 启动。
+**ZirconOS** is an NT-style hybrid microkernel operating system implemented in Zig. It supports BIOS (GRUB Multiboot2) and UEFI boot.
 
-## 设计理念
+<p align="center">
+  <img src="assets/ZirconOS_logo.svg" alt="ZirconOS logo" width="480" />
+</p>
 
-- **NT 风格混合微内核**：内核提供调度、虚拟内存、IPC、中断、系统调用等核心机制
-- **用户态系统服务**：Object Manager、Process Manager、I/O Manager、Security 等作为服务运行
-- **Win32 兼容层**：ntdll + kernel32 + kernelbase + 控制台子系统
-- **Win32 子系统服务器**：csrss 风格的子系统管理、窗口站、桌面
-- **Win32 应用执行引擎**：PE 加载 + DLL 绑定 + 进程创建 + API dispatch
-- **图形子系统**：user32 (窗口/消息) + gdi32 (绘图/字体/位图)
-- **WOW64 兼容层**：PE32 加载 + 32→64 位 syscall thunking + 32 位 PEB/TEB
-- **双 Shell 环境**：CMD 命令提示符 + PowerShell 高级 Shell
-- **双文件系统**：FAT32 (系统分区) + NTFS (数据分区)
-- **多架构支持**：x86_64（主要）、aarch64、loong64、riscv64、mips64el
+## Screenshots
 
-设计文档：[`docs/README.md`](docs/README.md) | [`docs/Architecture.md`](docs/Architecture.md) | [`docs/Kernel.md`](docs/Kernel.md) | [`docs/Boot.md`](docs/Boot.md) | [`docs/BuildSystem.md`](docs/BuildSystem.md) | [`docs/Roadmap.md`](docs/Roadmap.md)
+<p align="center">
+  <img src="assets/screenshot-grub.png" alt="GRUB boot menu" width="45%" />
+  &nbsp;
+  <img src="assets/screenshot-zbm.png" alt="ZBM boot manager" width="45%" />
+</p>
+<p align="center"><em>GRUB menu · ZirconOS Boot Manager (ZBM)</em></p>
 
-## 项目结构
+<p align="center">
+  <img src="assets/screenshot-classic.png" alt="Classic desktop theme" width="45%" />
+  &nbsp;
+  <img src="assets/screenshot-luna.png" alt="Luna desktop theme" width="45%" />
+</p>
+<p align="center"><em>Classic (Windows 2000 style) · Luna (Windows XP style)</em></p>
+
+<p align="center">
+  <img src="assets/screenshot-aero.png" alt="Aero desktop theme" width="45%" />
+  &nbsp;
+  <img src="assets/screenshot-modern.png" alt="Modern desktop theme" width="45%" />
+</p>
+<p align="center"><em>Aero (Vista/7 style) · Modern (Windows 8 style)</em></p>
+
+<p align="center">
+  <img src="assets/screenshot-cmd.png" alt="CMD shell" width="70%" />
+</p>
+<p align="center"><em>CMD shell</em></p>
+
+**中文说明**：[README_cn.md](README_cn.md)
+
+## Design
+
+- **NT-style hybrid microkernel**: scheduling, virtual memory, IPC, interrupts, and syscalls in the kernel
+- **User-mode system services**: Object Manager, Process Manager, I/O Manager, Security, etc.
+- **Win32 compatibility layer**: ntdll, kernel32, kernelbase, and the console subsystem
+- **Win32 subsystem server**: csrss-style management, window stations, and desktops
+- **Win32 execution engine**: PE loading, DLL binding, process creation, API dispatch
+- **Graphics subsystem**: user32 (windows/messages) and gdi32 (drawing/fonts/bitmaps)
+- **WOW64**: PE32 loading, 32→64 syscall thunking, 32-bit PEB/TEB
+- **Dual shell**: CMD and PowerShell-style shells
+- **Dual filesystem**: FAT32 (system volume) and NTFS (data volume)
+- **Multi-architecture**: x86_64 (primary), aarch64, loongarch64, riscv64, mips64el
+
+Documentation: [`docs/README.md`](docs/README.md) · [`docs/en/Architecture.md`](docs/en/Architecture.md) · [`docs/en/Kernel.md`](docs/en/Kernel.md) · [`docs/en/Boot.md`](docs/en/Boot.md) · [`docs/en/Servers.md`](docs/en/Servers.md) · [`docs/en/Subsystems.md`](docs/en/Subsystems.md) · [`docs/en/BuildSystem.md`](docs/en/BuildSystem.md) · [`docs/en/Roadmap.md`](docs/en/Roadmap.md)
+
+## Repository layout
 
 ```
 ZirconOS/
-├── build.zig              # Zig 构建配置
-├── build.zig.zon          # Zig 依赖声明
-├── run.sh                 # 构建与运行脚本
-├── Makefile               # Make 便捷入口
-├── config/                # 系统配置
-│   ├── system.conf        #   系统核心参数
-│   ├── boot.conf          #   引导配置
-│   ├── desktop.conf       #   桌面环境配置（主题选择、分辨率、窗口管理）
-│   └── defaults.zig       #   编译时嵌入配置数据
+├── build.zig              # Zig build
+├── build.zig.zon          # Zig dependencies
+├── run.sh                 # Build and run helper
+├── Makefile               # Make entry point
+├── assets/                # Logo and screenshots
+├── scripts/               # Build helpers (see scripts/README.md)
+├── gnu-efi/               # LoongArch GNU-EFI output (gitignored; make fetch-gnu-efi)
 ├── boot/
-│   ├── grub/grub.cfg      # GRUB 引导配置 (系统选择菜单)
-│   ├── uefi/main.zig      # UEFI 启动应用
+│   ├── grub/grub.cfg      # GRUB config (OS selection menu)
+│   ├── uefi/main.zig      # UEFI boot app
 │   └── zbm/               # ZirconOS Boot Manager (BIOS/MBR/GPT)
-├── link/                  # 各架构链接脚本
-│   └── x86_64.ld / aarch64.ld / loong64.ld / riscv64.ld / mips64el.ld
-├── src/                   # 内核源码
-│   ├── main.zig           # 内核入口 (Phase 0-11 启动流程)
-│   ├── config/            # 配置解析器
-│   ├── arch/              # 架构相关代码
-│   │   ├── x86_64/        #   Multiboot2, 分页, IDT, ISR, Syscall
-│   │   ├── aarch64/       #   AArch64 启动, 分页
-│   │   └── (loong64, riscv64, mips64el)
-│   ├── hal/               # 硬件抽象层
-│   │   ├── x86_64/        #   VGA, PIC, PIT, Port I/O, Serial, GDT, Framebuffer
-│   │   └── aarch64/       #   GIC, Timer, PL011 UART
-│   ├── drivers/           # 设备驱动
-│   │   └── video/         #   VGA, HDMI, Framebuffer, Display Manager
-│   ├── ke/                # Kernel Executive - 调度, 定时, 中断, 同步
-│   ├── mm/                # Memory Manager - 物理帧分配, 虚拟内存, 堆
-│   ├── ob/                # Object Manager - 对象/句柄表/命名空间
-│   ├── ps/                # Process Subsystem - 进程/线程管理
-│   ├── se/                # Security - Token/SID/访问检查
-│   ├── io/                # I/O Manager - 设备/驱动/IRP
-│   ├── lpc/               # LPC - IPC 消息传递/Port
-│   ├── rtl/               # Runtime Library - 内核日志
-│   ├── fs/                # File Systems - VFS/FAT32/NTFS
-│   ├── loader/            # Loader - PE32/PE32+/ELF
-│   ├── libs/              # 用户态 API 库
+├── link/                  # Per-architecture linker scripts
+│   └── x86_64.ld / aarch64.ld / loongarch64.ld / riscv64.ld / mips64el.ld
+├── src/                   # Kernel sources
+│   ├── main.zig           # Kernel entry (Phase 0–11 boot path)
+│   ├── config/            # Config parser + embedded defaults (*.conf, defaults.zig)
+│   ├── arch/              # Architecture code
+│   │   ├── x86_64/        #   Multiboot2, paging, IDT, ISR, syscall
+│   │   ├── aarch64/       #   AArch64 boot and paging
+│   │   └── (loongarch64, riscv64, mips64el)
+│   ├── hal/               # Hardware abstraction
+│   │   ├── x86_64/        #   VGA, PIC, PIT, port I/O, serial, GDT, framebuffer
+│   │   └── aarch64/       #   GIC, timer, PL011 UART
+│   ├── drivers/           # Device drivers
+│   │   └── video/         #   VGA, HDMI, framebuffer, display manager
+│   ├── ke/                # Kernel Executive — scheduling, timer, interrupts, sync
+│   ├── mm/                # Memory manager — physical frames, VM, heap
+│   ├── ob/                # Object Manager — objects, handle table, namespace
+│   ├── ps/                # Process subsystem — processes and threads
+│   ├── se/                # Security — token, SID, access checks
+│   ├── io/                # I/O Manager — devices, drivers, IRPs
+│   ├── lpc/               # LPC — IPC ports and messages
+│   ├── rtl/               # Runtime — kernel logging
+│   ├── fs/                # File systems — VFS, FAT32, NTFS
+│   ├── loader/            # Loader — PE32/PE32+/ELF
+│   ├── libs/              # User-mode API libraries
 │   │   ├── ntdll.zig      #   Native API (Nt*/Rtl*/Dbg*)
-│   │   └── kernel32.zig   #   Win32 Base API
-│   ├── servers/           # 系统服务
+│   │   └── kernel32.zig   #   Win32 base API
+│   ├── servers/           # System services
 │   │   ├── server.zig     #   Process Server (PID 1)
 │   │   └── smss.zig       #   Session Manager (SMSS)
-│   └── subsystems/        # 子系统实现
-│       └── win32/         #   Win32 子系统
-│           ├── subsystem.zig  csrss 子系统服务器
-│           ├── exec.zig       Win32 应用执行引擎
-│           ├── user32.zig     窗口/消息 API
-│           ├── gdi32.zig      图形设备接口 API
-│           ├── console.zig    控制台运行时
-│           ├── cmd.zig        CMD 命令提示符
-│           ├── powershell.zig PowerShell
-│           └── wow64.zig      WOW64 32位兼容层
-├── 3rdparty/              # 桌面主题（独立 Git 仓库，需先拉取）
-│   ├── themes.repos       #   各主题 clone URL 清单
-│   ├── fetch-themes.sh    #   一键克隆全部主题到本目录
-│   ├── ZirconOSClassic/   #   （克隆后）Windows 2000 经典主题
-│   ├── ZirconOSLuna/      #   （克隆后）Windows XP Luna 主题 ★ 已完整实现
-│   ├── ZirconOSAero/      #   （克隆后）Windows Vista/7 Aero 毛玻璃主题
-│   ├── ZirconOSModern/    #   （克隆后）Windows 8/8.1 Metro 扁平磁贴主题
-│   ├── ZirconOSFluent/    #   （克隆后）Windows 10 Fluent Design 主题
-│   ├── ZirconOSSunValley/ #   （克隆后）Windows 11 Sun Valley 主题
-│   └── README.md          #   桌面主题总览与 Git 地址说明
-└── docs/                  # 设计文档
+│   └── subsystems/        # Subsystems
+│       └── win32/         #   Win32 subsystem
+│           ├── subsystem.zig  # csrss server
+│           ├── exec.zig       # Win32 execution engine
+│           ├── user32.zig     # Windowing API
+│           ├── gdi32.zig      # GDI API
+│           ├── console.zig    # Console runtime
+│           ├── cmd.zig        # CMD
+│           ├── powershell.zig # PowerShell-style shell
+│           └── wow64.zig      # WOW64 layer
+├── src/desktop/           # Desktop theme Zig projects; each has resources/
+├── src/fonts/             # Shared open fonts (make fonts / scripts/fonts/fetch-fonts.sh)
+└── docs/                  # Design docs (en/ and cn/)
 ```
 
-## 桌面主题
+## Desktop themes
 
-ZirconOS 支持六套 Windows 风格桌面主题，覆盖 Windows 2000 到 Windows 11 的完整视觉演进。
-每套主题是独立的 Zig 子项目，源码在 **各自的 GitHub 仓库**；克隆主仓库后需先拉取到 `3rdparty/`：
+Six Windows-inspired desktop themes, from Windows 2000 through Windows 11. Each theme is a Zig subproject under `src/desktop/<name>/` with static assets in `resources/`.
 
-```bash
-./3rdparty/fetch-themes.sh
-# 或: make fetch-themes
-```
+Fonts: run `make fonts` or `scripts/fonts/fetch-fonts.sh` to populate `src/fonts/`.
 
-详见 [`3rdparty/README.md`](3rdparty/README.md) 中的仓库 URL 与 Submodule 说明。
+LoongArch UEFI links against GNU-EFI: `make fetch-gnu-efi` (outputs under `gnu-efi/`; see `scripts/README.md`).
 
-| 主题 | Windows 版本 | 状态 | 特色 |
-|------|-------------|------|------|
-| Classic | Windows 2000 | 框架 | 3D 灰色按钮、直角窗口、极简高效 |
-| **Luna** | **Windows XP** | **✅ 已实现** | 蓝色渐变任务栏、绿色开始按钮、圆角边框 |
-| Aero | Vista / 7 | 框架 | 毛玻璃透明边框、Flip 3D、Aero Snap |
-| Modern | Windows 8 | 框架 | 全屏磁贴、Metro 扁平化、Charms 栏 |
-| Fluent | Windows 10 | 框架 | 亚克力材质、暗色模式、Reveal 效果 |
-| Sun Valley | Windows 11 | 框架 | Mica 云母、大圆角、居中任务栏 |
+| Theme | Windows era | Status | Notes |
+|-------|----------------|--------|--------|
+| Classic | Windows 2000 | Scaffold | 3D gray chrome, square windows |
+| **Luna** | **Windows XP** | **Implemented** | Blue taskbar, green Start button, rounded frames |
+| Aero | Vista / 7 | Scaffold | Glass, Flip 3D, Aero Snap |
+| Modern | Windows 8 | Scaffold | Full-screen tiles, Metro flat UI, Charms |
+| Fluent | Windows 10 | Scaffold | Acrylic, dark mode, Reveal |
+| Sun Valley | Windows 11 | Scaffold | Mica, large corners, centered taskbar |
 
-桌面主题由 `config/desktop.conf` 配置选择：
+Select the theme in `src/config/desktop.conf` (embedded at build time):
 
 ```ini
 [desktop]
 theme = luna              # classic | luna | aero | modern | fluent | sunvalley
-color_scheme = blue       # 主题特定配色方案
+color_scheme = blue       # theme-specific scheme
 ```
 
-详细文档：[`3rdparty/README.md`](3rdparty/README.md)
+## Dependencies
 
-## 依赖
-
-Ubuntu/Debian：
+Ubuntu/Debian:
 
 ```bash
 sudo apt update
@@ -128,84 +146,84 @@ sudo apt install -y grub-pc-bin grub-common xorriso mtools \
     qemu-system-x86 qemu-system-arm ovmf
 ```
 
-Zig 编译器：从 [ziglang.org](https://ziglang.org/download/) 下载并加入 PATH。
+Install Zig from [ziglang.org](https://ziglang.org/download/) and add it to `PATH`.
 
-## 构建与运行
+## Build and run
 
 ```bash
-# 使用 run.sh（推荐）
-./run.sh build              # 构建内核 (Debug)
-./run.sh build-release      # 构建内核 (Release)
-./run.sh iso                # 构建 ISO
-./run.sh run                # 构建 ISO 并在 QEMU 中运行 (BIOS)
-./run.sh run-debug          # BIOS + GDB 调试服务器
-./run.sh run-release        # BIOS Release 模式
-./run.sh run-uefi           # UEFI 模式运行 (x86_64)
-./run.sh run-uefi-aarch64   # UEFI 模式运行 (aarch64)
-./run.sh run-aarch64        # AArch64 裸机运行
-./run.sh clean              # 清理构建产物
-./run.sh help               # 查看帮助
+# run.sh (recommended)
+./run.sh build              # Kernel (Debug)
+./run.sh build-release      # Kernel (Release)
+./run.sh iso                # Build ISO
+./run.sh run                # Build ISO and run in QEMU (BIOS)
+./run.sh run-debug          # BIOS + GDB server
+./run.sh run-release        # BIOS Release
+./run.sh run-uefi           # UEFI (x86_64)
+./run.sh run-uefi-aarch64   # UEFI (aarch64)
+./run.sh run-aarch64        # AArch64 bare metal
+./run.sh clean              # Clean
+./run.sh help               # Help
 
-# 使用 Make（简洁入口）
-make run                    # 等同于 ./run.sh run
-make run-debug              # 等同于 ./run.sh run-debug
-make clean                  # 等同于 ./run.sh clean
-make help                   # 查看帮助
+# Make shortcuts
+make run
+make run-debug
+make clean
+make help
 
-# 使用 Zig 直接构建
+# Zig directly
 zig build -Darch=x86_64 -Ddebug=true -Denable_idt=true
 ```
 
-## v1.0 已实现 (Phase 0-11)
+## v1.0 feature matrix (Phase 0–11)
 
-| 模块 | 状态 | 说明 |
-|------|------|------|
-| GRUB Boot | ✅ | Multiboot2 启动, x86_64, 多种启动模式 |
-| UEFI Boot | ✅ | UEFI 启动应用, Debug/Release, Phase 0-11 信息 |
-| VGA Output | ✅ | 文本模式控制台 |
-| Serial | ✅ | COM1 串口输出 |
-| Frame Allocator | ✅ | 位图物理帧分配器 |
-| Paging | ✅ | 四级页表, identity mapping |
-| Kernel Heap | ✅ | Bump 分配器 |
-| IPC (LPC) | ✅ | 消息队列, send/receive, Port |
-| Syscall | ✅ | int 0x80 分发 |
-| IDT/ISR | ✅ | 中断描述符表 256 vectors |
-| Scheduler | ✅ | Round-Robin 调度器 |
-| Timer | ✅ | PIC + PIT ~100Hz |
-| Sync | ✅ | Event, Mutex, Semaphore, SpinLock |
-| Object Manager | ✅ | 对象类型/句柄表/命名空间/Waitable |
-| Process Manager | ✅ | 进程/线程, Process Server |
-| Session Manager | ✅ | SMSS, 会话管理, 子系统注册 |
-| Security | ✅ | Token, SID, 访问检查 |
-| I/O Manager | ✅ | 设备/驱动/IRP 分发 |
-| VFS | ✅ | 虚拟文件系统, 挂载点 |
-| FAT32 | ✅ | 文件创建/读写/目录/删除 (C:\) |
-| NTFS | ✅ | MFT, 文件/目录操作 (D:\) |
-| PE32+ Loader | ✅ | PE 头解析, DLL加载, 导入解析, 重定位, PEB/TEB |
-| PE32 Loader | ✅ | 32位 PE 支持, WOW64 兼容 |
-| ELF Loader | ✅ | ELF64 头解析, 段加载, 共享对象 |
-| ntdll | ✅ | Native API (进程/线程/文件/同步/内存/IPC/系统/注册表/调试) |
-| kernel32 | ✅ | Win32 Base API (进程/文件搜索/控制台/内存/模块/同步/环境) |
-| user32 | ✅ | 窗口管理, 消息队列, 窗口类, UI 原语, 输入处理 |
-| gdi32 | ✅ | 设备上下文, 绘图原语, 字体, 位图, BitBlt |
-| Console | ✅ | 控制台运行时 |
-| CMD Shell | ✅ | 命令提示符 (dir, cd, set, ver, systeminfo, tasklist 等) |
-| PowerShell | ✅ | 高级 Shell (Get-Process, Get-ChildItem, Get-Service 等) |
-| csrss | ✅ | Win32 子系统服务器, 窗口站, 桌面, 进程注册, GUI 分发 |
-| Exec Engine | ✅ | Win32 应用执行引擎, PE加载, DLL绑定, 生命周期管理 |
-| WOW64 | ✅ | 32位兼容层, PE32加载, syscall thunking, 32位PEB/TEB |
+| Area | Status | Notes |
+|------|--------|--------|
+| GRUB boot | Done | Multiboot2, x86_64, multiple modes |
+| UEFI boot | Done | UEFI app, Debug/Release, Phase 0–11 banner |
+| VGA | Done | Text console |
+| Serial | Done | COM1 |
+| Frame allocator | Done | Bitmap allocator |
+| Paging | Done | Four-level tables, identity map |
+| Kernel heap | Done | Bump allocator |
+| IPC (LPC) | Done | Queues, send/receive, ports |
+| Syscall | Done | int 0x80 dispatch |
+| IDT/ISR | Done | 256 vectors |
+| Scheduler | Done | Round-robin |
+| Timer | Done | PIC + PIT ~100Hz |
+| Sync | Done | Event, mutex, semaphore, spinlock |
+| Object Manager | Done | Types, handle table, namespace, waitable |
+| Process Manager | Done | Processes/threads, Process Server |
+| Session Manager | Done | SMSS, sessions, subsystem registration |
+| Security | Done | Token, SID, access checks |
+| I/O Manager | Done | Devices, drivers, IRP dispatch |
+| VFS | Done | Mount points |
+| FAT32 | Done | Files/dirs on `C:\` |
+| NTFS | Done | MFT, files/dirs on `D:\` |
+| PE32+ loader | Done | Headers, DLLs, imports, relocs, PEB/TEB |
+| PE32 loader | Done | 32-bit PE, WOW64 |
+| ELF loader | Done | ELF64 headers, segments, shared objects |
+| ntdll | Done | Native API surface |
+| kernel32 | Done | Win32 base API |
+| user32 | Done | Windows, messages, classes, UI primitives, input |
+| gdi32 | Done | DC, primitives, fonts, bitmaps, BitBlt |
+| Console | Done | Console runtime |
+| CMD | Done | dir, cd, set, ver, systeminfo, tasklist, … |
+| PowerShell | Done | cmdlet-style commands |
+| csrss | Done | Win32 server, stations, desktops, GUI dispatch |
+| Exec engine | Done | PE load, DLL bind, lifecycle |
+| WOW64 | Done | PE32, syscall thunking, 32-bit PEB/TEB |
 
-## 里程碑
+## Milestones
 
-- **Phase 0** ✅ 工具链 + QEMU 调试环境
-- **Phase 1** ✅ Boot + Early Kernel (GDT/Multiboot2/Frame/Heap)
-- **Phase 2** ✅ Trap / Timer / Scheduler
-- **Phase 3** ✅ VM + User Mode (页表/地址空间)
-- **Phase 4** ✅ Object / Handle / Process Core
-- **Phase 5** ✅ IPC + System Services (SMSS/LPC)
-- **Phase 6** ✅ I/O + File System (FAT32/NTFS) + Driver
-- **Phase 7** ✅ Loader (PE32/PE32+/ELF, DLL管理, 导入解析, 重定位)
-- **Phase 8** ✅ Native Userland (ntdll/kernel32 完整API/CMD/PowerShell)
-- **Phase 9** ✅ Win32 Subsystem (csrss/exec引擎/应用执行/DLL绑定)
-- **Phase 10** ✅ Graphical Subsystem (user32窗口管理/gdi32绘图/消息队列/GUI分发)
-- **Phase 11** ✅ WOW64 (PE32加载/syscall thunking/32位PEB-TEB/兼容性测试)
+- **Phase 0** — Toolchain and QEMU debugging  
+- **Phase 1** — Boot and early kernel (GDT/Multiboot2/frame/heap)  
+- **Phase 2** — Traps, timer, scheduler  
+- **Phase 3** — VM and user mode  
+- **Phase 4** — Objects, handles, process core  
+- **Phase 5** — IPC and system services (SMSS/LPC)  
+- **Phase 6** — I/O, filesystems (FAT32/NTFS), drivers  
+- **Phase 7** — Loaders (PE32/PE32+/ELF, DLLs, imports, relocs)  
+- **Phase 8** — Native userland (ntdll/kernel32, CMD, PowerShell)  
+- **Phase 9** — Win32 subsystem (csrss, exec engine, PE/DLL)  
+- **Phase 10** — Graphics (user32, gdi32, message queue, GUI dispatch)  
+- **Phase 11** — WOW64 (PE32, thunking, 32-bit PEB/TEB)  
