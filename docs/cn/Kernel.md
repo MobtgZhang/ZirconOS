@@ -11,7 +11,7 @@ src/
 ├── arch/              # 架构相关实现
 │   ├── x86_64/        #   start.s, boot.zig, paging.zig, idt.zig, syscall.zig, ...
 │   ├── aarch64/       #   启动, 分页
-│   ├── loong64/
+│   ├── loongarch64/
 │   ├── riscv64/
 │   └── mips64el/
 ├── hal/               # 硬件抽象层
@@ -48,7 +48,7 @@ src/
 │   ├── audio/         #   AC97
 │   └── input/         #   PS/2 鼠标
 ├── rtl/               # 运行时库
-├── config/            # 配置解析
+├── config/            # 配置解析与嵌入式默认 *.conf
 └── registry/          # 注册表
 ```
 
@@ -259,6 +259,12 @@ console, serial, keyboard, disk, framebuffer, mouse, audio 等。
 | dwm.zig | Desktop Window Manager 合成器 |
 
 支持的桌面主题：Classic、Luna、Aero、Modern、Fluent、SunValley
+
+**桌面鼠标与合成帧（`main.zig` + `display.zig`）**
+
+- IRQ12 在 `mouse.zig` 中更新绝对坐标并设置 `cursor_moved`；事件同时入队供按键/滚轮处理。
+- 主循环除消费 `popEvent()` 外，必须在 **`hasCursorMoved()` 为真时仍调用 `renderDesktopFrame()`**：否则队列溢出时坐标已更新但无事件，指针不重绘。
+- `renderDesktopFrame()` 在一帧内 **排空** `isInterpolating()` 的 PS/2 子步插值，避免仅依赖多次定时器唤醒才能完成插值。
 
 ### 音频驱动 (drivers/audio/)
 

@@ -1,56 +1,57 @@
-# ZirconOS 文档
+# ZirconOS documentation
 
-ZirconOS 是一个基于 Zig 语言实现的 **NT 风格混合微内核操作系统**。内核提供最小机制（调度、虚拟内存、IPC、中断、系统调用），复杂系统语义通过用户态服务和子系统实现，兼容 Win32 API 子集。
+ZirconOS is an **NT-style hybrid microkernel operating system** implemented in Zig. The kernel provides minimal mechanisms (scheduling, virtual memory, IPC, interrupts, system calls); higher-level semantics live in user-mode services and subsystems, with a subset of Win32-compatible APIs.
 
-## 文档目录
+**简体中文**：[cn/README.md](cn/README.md)
 
-| 文档 | 说明 |
-|------|------|
-| [Architecture.md](Architecture.md) | 总体架构设计：分层模型、设计原则、对象模型、安全模型 |
-| [Kernel.md](Kernel.md) | 内核内部实现：调度器、内存管理、中断、系统调用、IPC、对象管理器 |
-| [Boot.md](Boot.md) | 启动流程：GRUB / ZBM / UEFI 引导路径、内核初始化阶段 (Phase 0–12) |
-| [Servers.md](Servers.md) | 系统服务：Process Server、Session Manager、LPC 端口 |
-| [Subsystems.md](Subsystems.md) | 子系统：Win32 (CMD/PowerShell/user32/gdi32)、WOW64、POSIX |
-| [BuildSystem.md](BuildSystem.md) | 构建系统：build.conf 配置、Makefile、build.zig、run.sh 用法 |
-| [Roadmap.md](Roadmap.md) | 开发路线图：里程碑 Phase 0–11、设计目标与非目标、风险分析 |
+## Documentation index
 
-## 项目概览
+| Document | Description |
+|----------|-------------|
+| [Architecture.md](en/Architecture.md) | Overall architecture: layering, design principles, object model, security |
+| [Kernel.md](en/Kernel.md) | Kernel internals: scheduler, memory, interrupts, syscalls, IPC, Object Manager |
+| [Boot.md](en/Boot.md) | Boot path: GRUB / ZBM / UEFI, kernel init phases (Phase 0–12) |
+| [Servers.md](en/Servers.md) | System services: Process Server, Session Manager, LPC ports |
+| [Subsystems.md](en/Subsystems.md) | Subsystems: Win32 (CMD/PowerShell/user32/gdi32), WOW64, POSIX |
+| [BuildSystem.md](en/BuildSystem.md) | Build system: `build.conf`, Makefile, `build.zig`, `run.sh` |
+| [Roadmap.md](en/Roadmap.md) | Roadmap: Phase 0–11 milestones, goals, non-goals, risks |
+
+### Chinese (中文)
+
+The same documents are available in Chinese under [`cn/`](cn/):
+
+| 中文文档 | 说明 |
+|----------|------|
+| [Architecture.md](cn/Architecture.md) | 总体架构 |
+| [Kernel.md](cn/Kernel.md) | 内核实现 |
+| [Boot.md](cn/Boot.md) | 启动流程 |
+| [Servers.md](cn/Servers.md) | 系统服务 |
+| [Subsystems.md](cn/Subsystems.md) | 子系统 |
+| [BuildSystem.md](cn/BuildSystem.md) | 构建系统 |
+| [Roadmap.md](cn/Roadmap.md) | 路线图 |
+
+## Repository layout (overview)
 
 ```
 ZirconOS/
-├── src/                   # 内核源码
-│   ├── main.zig           #   内核入口 (Phase 0-12)
-│   ├── arch/              #   架构相关 (x86_64, aarch64, loong64, riscv64, mips64el)
-│   ├── hal/               #   硬件抽象层 (VGA, PIC, PIT, Serial, GDT)
-│   ├── ke/                #   Kernel Executive (调度, 定时, 中断, 同步)
-│   ├── mm/                #   内存管理 (物理帧, 虚拟内存, 堆)
-│   ├── ob/                #   对象管理器 (对象, 句柄表, 命名空间)
-│   ├── ps/                #   进程子系统 (进程, 线程)
-│   ├── se/                #   安全 (Token, SID, 访问检查)
-│   ├── io/                #   I/O 管理器 (设备, 驱动, IRP)
-│   ├── lpc/               #   IPC (LPC Port, 消息队列)
-│   ├── fs/                #   文件系统 (VFS, FAT32, NTFS)
-│   ├── loader/            #   加载器 (PE32, PE32+, ELF)
-│   ├── drivers/           #   设备驱动 (video, audio, input)
-│   ├── libs/              #   用户态 API (ntdll, kernel32)
-│   ├── servers/           #   系统服务 (Process Server, SMSS)
-│   ├── subsystems/win32/  #   Win32 子系统 (csrss, CMD, PowerShell, user32, gdi32)
-│   ├── registry/          #   注册表
-│   └── rtl/               #   运行时库 (klog)
-├── boot/                  # 引导代码 (GRUB, ZBM, UEFI)
-├── config/                # 系统配置文件
-├── link/                  # 各架构链接脚本
-├── 3rdparty/              # 桌面主题 (Classic, Luna, Aero, Modern, Fluent, SunValley)
-├── scripts/               # 构建辅助脚本
-├── tests/                 # 测试套件
-├── build.zig              # Zig 构建配置
-├── Makefile               # Make 入口
-└── run.sh                 # 统一构建运行脚本
+├── src/                   # Kernel and userland sources
+├── boot/                  # Bootloader (GRUB, ZBM, UEFI)
+├── link/                  # Per-architecture linker scripts
+├── scripts/               # Build helpers (see scripts/README.md)
+├── tests/                 # Test suite
+├── assets/                # Screenshots and project artwork
+├── docs/
+│   ├── README.md          # This index (English)
+│   ├── en/                # English documentation
+│   └── cn/                # Chinese documentation
+├── build.zig
+├── Makefile
+└── run.sh
 ```
 
-## 核心技术栈
+## Tech stack
 
-- **语言**: Zig（无 libc 依赖）
-- **架构**: x86_64（主要）、aarch64、loong64、riscv64、mips64el
-- **引导**: BIOS (GRUB Multiboot2) + UEFI + ZBM (自研 Boot Manager)
-- **运行环境**: QEMU
+- **Language**: Zig (no libc dependency in the kernel build)
+- **Architectures**: x86_64 (primary), aarch64, loongarch64, riscv64, mips64el
+- **Boot**: BIOS (GRUB Multiboot2), UEFI, ZBM (in-tree boot manager)
+- **Runtime**: QEMU for development and testing

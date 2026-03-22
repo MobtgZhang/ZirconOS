@@ -18,13 +18,16 @@
 
 | 配置项 | 可选值 | 默认值 | 说明 |
 |--------|--------|--------|------|
-| `ARCH` | x86_64, aarch64, loong64, riscv64, mips64el | x86_64 | 目标架构 |
+| `ARCH` | x86_64, aarch64, loongarch64, riscv64, mips64el | x86_64 | 目标架构 |
 | `BOOT_METHOD` | mbr, uefi | uefi | 启动方式 |
-| `BOOTLOADER` | grub, zbm | grub | 引导加载器 |
+| `BOOTLOADER` | grub, zbm | grub | 引导加载器（**loongarch64 仅 zbm**，无 GRUB） |
 | `DESKTOP` | classic, luna, aero, modern, fluent, sunvalley, none | none | 桌面主题 |
 | `OPTIMIZE` | Debug, ReleaseSafe, ReleaseFast, ReleaseSmall | Debug | 优化级别 |
 | `RESOLUTION` | 宽x高x色深 | 1024x768x32 | 显示分辨率 |
-| `QEMU_MEM` | 内存大小 | 512M | QEMU 分配内存 |
+| `QEMU_MEM` | 内存大小 | 512M | QEMU 分配内存（x86 等） |
+| `QEMU_MEM_LOONGARCH64` | 内存大小 | 1536M | `make run-loongarch64` 专用；`qemu-system-loongarch64 -M virt` 要求 **大于 1G** |
+| `LOONGARCH64_FIRMWARE_DIR` | 目录 | `~/Firmware/LoongArchVirtMachine` | 内含 `QEMU_EFI.fd` / `QEMU_VARS.fd`；若不存在则回退到 `firmware/` 下 EDK2 nightly 文件名 |
+| `LOONGARCH64_BOOT_EFI` | 文件 | （自动探测） | 若存在 `BOOTLOONGARCH64.EFI`（置于上述目录或 `firmware/`），会写入 ESP 的 `\EFI\BOOT\`；否则需在 Shell 中手动链式加载内核 |
 | `ENABLE_IDT` | true, false | true | 是否启用 IDT |
 | `DEBUG_LOG` | true, false | true | 是否启用调试日志 |
 | `GRUB_MENU` | all, minimal | minimal | GRUB 菜单模式 |
@@ -121,14 +124,14 @@ zig build -Darch=x86_64 -Ddebug=true -Denable_idt=true
 
 ## 8. 系统配置文件
 
-运行时配置位于 `config/` 目录，在编译时通过 `@embedFile` 嵌入内核：
+默认配置位于 `src/config/`，编译时通过 `@embedFile` 嵌入内核：
 
 | 文件 | 说明 |
 |------|------|
-| `config/system.conf` | 系统核心参数：主机名、内存、调度策略、显示、文件系统 |
-| `config/boot.conf` | 引导配置：超时、Multiboot 参数、UEFI/ZBM 选项 |
-| `config/desktop.conf` | 桌面环境：主题选择、DWM 配置、任务栏、字体 |
-| `config/defaults.zig` | 编译时嵌入，`@embedFile` 加载 .conf 文件 |
+| `src/config/system.conf` | 系统核心参数：主机名、内存、调度策略、显示、文件系统 |
+| `src/config/boot.conf` | 引导配置：超时、Multiboot 参数、UEFI/ZBM 选项 |
+| `src/config/desktop.conf` | 桌面环境：主题选择、DWM 配置、任务栏、字体 |
+| `src/config/defaults.zig` | `@embedFile` 加载上述 .conf |
 
 `src/config/config.zig` 负责在运行时解析这些配置并提供访问接口。
 
@@ -146,17 +149,16 @@ sudo apt install -y grub-pc-bin grub-common xorriso mtools \
 
 从 [ziglang.org](https://ziglang.org/download/) 下载并加入 PATH。
 
-## 10. 桌面主题拉取
+## 10. 桌面主题与字体
 
-桌面主题作为独立 Git 仓库管理，需单独拉取：
+主题源码与 `resources/` 已位于主仓库 `src/desktop/<classic|luna|aero|modern|fluent|sunvalley>/`。
+
+开源字体需按需下载到 `src/fonts/`：
 
 ```bash
-./3rdparty/fetch-themes.sh
-# 或
-make fetch-themes
+make fonts
+# 或: ./scripts/fonts/fetch-fonts.sh
 ```
-
-主题仓库 URL 列表见 `3rdparty/themes.repos`。
 
 ## 11. 测试
 

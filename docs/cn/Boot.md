@@ -109,7 +109,7 @@ _start64 (64-bit long mode)
 
 ### Phase 0 — 配置加载
 
-- 加载嵌入式配置文件 (`config/system.conf`, `config/boot.conf`, `config/desktop.conf`)
+- 加载嵌入式配置文件 (`src/config/system.conf`, `src/config/boot.conf`, `src/config/desktop.conf`)
 - 解析配置参数
 
 ### Phase 1 — 核心硬件初始化
@@ -202,7 +202,7 @@ _start64 (64-bit long mode)
 |------|------|----------|
 | `link/x86_64.ld` | x86_64 | 1MB (0x100000)，含 .multiboot2、.uefi_vector 节 |
 | `link/aarch64.ld` | aarch64 | 0x40080000 |
-| `link/loong64.ld` | LoongArch64 | 架构特定 |
+| `link/loongarch64.ld` | LoongArch64 | `0x00200000` 起（QEMU virt 首段 RAM；见 §8） |
 | `link/riscv64.ld` | RISC-V 64 | 架构特定 |
 | `link/mips64el.ld` | MIPS64 LE | 架构特定 |
 | `link/mbr.ld` | x86 | MBR 引导扇区 (0x7C00) |
@@ -225,3 +225,20 @@ _start64 (64-bit long mode)
 - `mode=powershell` — 启动到 PowerShell
 - `mode=desktop` — 启动到图形桌面
 - `theme=luna` — 选择桌面主题
+
+## 8. LoongArch64 启动（QEMU）
+
+### 8.1 推荐：QEMU `-kernel` 直启（默认）
+
+- QEMU `virt` 首段 RAM 为 **0 .. 0x10000000（256MB）**。内核链接在 **`link/loongarch64.ld`** 的 **`0x00200000`**，整块映像（含大 `.bss`）落在该段内，便于 `load_elf` 映射；**不要**把内核放在 **0x80000000** 起的高物理地址：低 256MB 与高内存（`VIRT_HIGHMEM_BASE`）之间存在**空洞**，BSS 跨越空洞时会出现未映射内存、启动即非法写。
+- 入口 **`crt0.S`** 在调用 `kernel_main` 前设置 **栈指针**（LoongArch LP64D 使用 `$r3` 作栈），否则首条用栈指令会访问无效地址。
+- **`make run-loongarch64`**（`LOONGARCH64_QEMU_MODE=kernel`）使用 **`qemu-system-loongarch64 -kernel build/tmp/kernel.elf`**，**无需** EDK2/GRUB/ESP，**串口** `-serial stdio` 即可看到 `klog` 输出。
+
+### 8.2 UEFI + ESP（仅 ZBM）
+
+本仓库 **LoongArch64 不提供 GRUB 路径**；UEFI 启动仅支持 **ZBM + UEFI**（`BOOTLOADER=zbm`，Makefile 会对 `grub` 报错）。
+
+- **标准路径**：固件查找 `\EFI\BOOT\BOOTLOONGARCH64.EFI`；缺失则进入 Shell。
+- **EDK2 Shell**（`make fetch-firmware` / `fetch-loongarch-boot-efi`）可作固件内辅助或备用，**不是**主引导方案。
+- **ZBM**：Zig **无法**直接 `zig build-exe -target loongarch64-uefi` 出 PE（`UnsupportedCoffArchitecture`）。使用 **`boot/zbm/uefi/main_loongarch64.zig`** → `zbm_loongarch64.o`，再经 **GNU-EFI**（`make fetch-gnu-efi` 提供 crt0/lds）与 **`objcopy --target=efi-app-loongarch64`** 得到 `BOOTLOONGARCH64.EFI`。交叉 GCC 可选，可用 **`zig cc`**；**`llvm-objcopy`** 或 **`loongarch64-linux-gnu-objcopy`** 二选一。
+- **`make run-loongarch64`**（`LOONGARCH64_QEMU_MODE=uefi`）需 **`build-esp`** 与 **`QEMU_EFI.fd`**。
